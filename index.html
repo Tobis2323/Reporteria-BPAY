@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Procesador de Reportes | Herramienta Interna</title>
+    <meta name="description" content="Herramienta interna para procesar y traducir reportes de movimientos financieros en formato Excel (.xlsx)." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="header" role="banner">
+      <div class="header__inner">
+        <div class="header__brand" id="headerBrand" role="button" tabindex="0" title="Volver al menú principal" aria-label="Volver al menú principal">
+          <img src="BezzaPaySVG.svg" alt="Bezza Pay" class="header__logo" />
+          <div class="header__brand-text">
+            <span class="header__brand-name">Reportería</span>
+          </div>
+        </div>
+        <div class="header__badge">
+          <span class="badge badge--internal">Solo uso Interno</span>
+        </div>
+      </div>
+    </header>
+
+    <main id="main-content" class="main" tabindex="-1">
+
+      <section class="processor-section" aria-labelledby="processor-heading">
+        <h2 id="processor-heading" class="sr-only">Cargar archivo XLSX</h2>
+        <div class="processor-card" id="processorCard">
+
+          <!-- OVERLAY DE ARRASTRE (permite soltar archivos en cualquier pantalla) -->
+          <div class="card-drag-overlay" id="cardDragOverlay" aria-hidden="true">
+            <div class="card-drag-overlay__content">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="17 8 12 3 7 8"></polyline>
+                <line x1="12" y1="3" x2="12" y2="15"></line>
+              </svg>
+              <p class="card-drag-overlay__title">Soltá tu archivo XLSX acá</p>
+              <p class="card-drag-overlay__sub">para procesar un nuevo reporte</p>
+            </div>
+          </div>
+
+          <!-- STATE: IDLE -->
+          <div class="state state--idle" id="stateIdle" role="region" aria-label="Zona de carga de archivo">
+            
+            <!-- SELECTOR TIPO DE REPORTE -->
+            <div class="report-type-bar" role="radiogroup" aria-label="Tipo de reporte a procesar">
+              <span class="report-type-bar__label">Modo:</span>
+              <div class="report-type-options">
+                <button type="button" class="type-btn active" data-type="auto" id="typeBtnAuto" role="radio" aria-checked="true">
+                  <span class="type-btn__text">Automático</span>
+                </button>
+                <button type="button" class="type-btn" data-type="movimientos" id="typeBtnMov" role="radio" aria-checked="false">
+                  <span class="type-btn__text">Movimientos</span>
+                </button>
+                <button type="button" class="type-btn" data-type="transacciones" id="typeBtnTx" role="radio" aria-checked="false">
+                  <span class="type-btn__text">Transacciones</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- TOGGLE SALDO (opcional, previo a arrastrar archivo) -->
+            <div class="toggle-card" id="saldoToggleCard">
+              <label class="toggle-control" for="saldoToggle">
+                <input type="checkbox" id="saldoToggle" class="toggle-control__input" />
+                <span class="toggle-control__switch"></span>
+                <span class="toggle-control__content">
+                  <span class="toggle-control__title">
+                    Calcular columna Saldo
+                    <span class="badge badge--tx-notice" id="saldoTxNotice" style="display: none;">No aplica a Transacciones</span>
+                  </span>
+                  <span class="toggle-control__desc" id="saldoDesc">Agrega una columna al final con el saldo progresivo histórico según Monto Neto (solo Movimientos)</span>
+                </span>
+              </label>
+            </div>
+
+            <div class="dropzone" id="dropzone" role="button" tabindex="0"
+              aria-label="Arrastrar y soltar archivo XLSX aqui, o hacer clic para seleccionar"
+              aria-describedby="dropzoneHint">
+              <div class="dropzone__rings" aria-hidden="true">
+                <div class="ring ring--1"></div>
+                <div class="ring ring--2"></div>
+                <div class="ring ring--3"></div>
+              </div>
+              <div class="dropzone__icon-wrap" aria-hidden="true">
+                <svg class="dropzone__icon" viewBox="0 0 64 64" fill="none">
+                  <rect x="8" y="8" width="48" height="48" rx="12" fill="url(#grad-icon)" opacity="0.12"/>
+                  <path d="M32 20V40M32 20L25 27M32 20L39 27" stroke="url(#grad-icon2)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M20 44H44" stroke="url(#grad-icon2)" stroke-width="2.5" stroke-linecap="round"/>
+                  <path d="M14 36C14 36 14 44 20 44" stroke="url(#grad-icon2)" stroke-width="2.5" stroke-linecap="round"/>
+                  <path d="M50 36C50 36 50 44 44 44" stroke="url(#grad-icon2)" stroke-width="2.5" stroke-linecap="round"/>
+                  <defs>
+                    <linearGradient id="grad-icon" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+                      <stop stop-color="#c514a7"/><stop offset="1" stop-color="#f20027"/>
+                    </linearGradient>
+                    <linearGradient id="grad-icon2" x1="14" y1="20" x2="50" y2="44" gradientUnits="userSpaceOnUse">
+                      <stop stop-color="#c514a7"/><stop offset="1" stop-color="#f20027"/>
+                    </linearGradient>
+                  </defs>
+                </svg>
+              </div>
+              <div class="dropzone__text">
+                <p class="dropzone__title">Arrastra tu archivo XLSX acá</p>
+                <p class="dropzone__subtitle" id="dropzoneHint">o hace clic para seleccionar un archivo</p>
+              </div>
+              <input type="file" id="fileInput" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                class="dropzone__input" aria-hidden="true" tabindex="-1"/>
+            </div>
+          </div>
+
+          <!-- STATE: LOADING -->
+          <div class="state state--loading" id="stateLoading" hidden aria-live="polite" aria-label="Procesando archivo">
+            <div class="loading-container">
+              <div class="loading-spinner" aria-hidden="true">
+                <div class="spinner-ring spinner-ring--outer"></div>
+                <div class="spinner-ring spinner-ring--inner"></div>
+                <svg class="spinner-icon-svg" viewBox="0 0 24 24" fill="none">
+                  <path d="M9 12.5L11 14.5L15.5 10" stroke="url(#grad-check-l)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                  <defs>
+                    <linearGradient id="grad-check-l" x1="9" y1="10" x2="15.5" y2="14.5" gradientUnits="userSpaceOnUse">
+                      <stop stop-color="#c514a7"/><stop offset="1" stop-color="#f20027"/>
+                    </linearGradient>
+                  </defs>
+                </svg>
+              </div>
+              <p class="loading-title">Procesando reporte...</p>
+              <p class="loading-subtitle" id="loadingStatus">Leyendo datos del archivo</p>
+              <div class="loading-steps" aria-live="polite">
+                <div class="loading-step" id="step1"><div class="step-dot"></div><span>Leyendo archivo Excel</span></div>
+                <div class="loading-step" id="step2"><div class="step-dot"></div><span>Aplicando traducciones</span></div>
+                <div class="loading-step" id="step3"><div class="step-dot"></div><span>Renombrando y filtrando columnas</span></div>
+                <div class="loading-step" id="step4"><div class="step-dot"></div><span>Preparando descarga</span></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- STATE: SUCCESS -->
+          <div class="state state--success" id="stateSuccess" hidden aria-live="polite">
+            <div class="success-container">
+              <div class="success-icon-wrap" aria-hidden="true">
+                <div class="success-glow"></div>
+                <svg class="success-check" viewBox="0 0 80 80" fill="none" width="80" height="80">
+                  <circle cx="40" cy="40" r="36" stroke="url(#grad-success-ring)" stroke-width="3" stroke-dasharray="226" stroke-dashoffset="226" class="success-circle"/>
+                  <path d="M26 40L35 49L54 30" stroke="url(#grad-success-path)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="50" stroke-dashoffset="50" class="success-path"/>
+                  <defs>
+                    <linearGradient id="grad-success-ring" x1="4" y1="4" x2="76" y2="76" gradientUnits="userSpaceOnUse">
+                      <stop stop-color="#c514a7"/><stop offset="1" stop-color="#f20027"/>
+                    </linearGradient>
+                    <linearGradient id="grad-success-path" x1="26" y1="30" x2="54" y2="49" gradientUnits="userSpaceOnUse">
+                      <stop stop-color="#c514a7"/><stop offset="1" stop-color="#f20027"/>
+                    </linearGradient>
+                  </defs>
+                </svg>
+              </div>
+              <p class="success-title">Reporte procesado!</p>
+              <p class="success-subtitle">El archivo fue procesado con éxito y está listo para descargar.</p>
+              <div class="success-meta" id="successMeta" aria-live="polite"></div>
+              <div class="success-actions">
+                <button class="btn btn--download" id="downloadBtn" type="button" aria-label="Descargar el archivo Excel procesado">
+                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                    <path d="M10 3V13M10 13L6 9M10 13L14 9" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M3 15H17" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+                  </svg>
+                  Descargar Reporte Procesado
+                </button>
+                <button class="btn btn--secondary" id="resetBtn" type="button" aria-label="Procesar otro archivo">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <path d="M2 8C2 4.686 4.686 2 8 2C10.21 2 12.15 3.1 13.25 4.75M14 8C14 11.314 11.314 14 8 14C5.79 14 3.85 12.9 2.75 11.25" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+                    <path d="M13.5 2L13.25 4.75L10.5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                  Procesar otro archivo
+                </button>
+                <p class="drop-hint">o arrastrá otro archivo XLSX directamente acá</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- STATE: ERROR -->
+          <div class="state state--error" id="stateError" hidden aria-live="assertive">
+            <div class="error-container">
+              <div class="error-icon-wrap" aria-hidden="true">
+                <svg viewBox="0 0 80 80" fill="none" width="80" height="80">
+                  <circle cx="40" cy="40" r="36" stroke="#F43F5E" stroke-width="3" opacity="0.3"/>
+                  <circle cx="40" cy="40" r="36" fill="#FFF1F3"/>
+                  <path d="M26 26L54 54M54 26L26 54" stroke="#F43F5E" stroke-width="3.5" stroke-linecap="round"/>
+                </svg>
+              </div>
+              <p class="error-title">Error al procesar</p>
+              <p class="error-message" id="errorMessage">Ocurrio un error inesperado.</p>
+              <button class="btn btn--secondary" id="errorResetBtn" type="button" aria-label="Intentar nuevamente">Intentar nuevamente</button>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="info-grid" aria-label="Reglas de procesamiento aplicadas">
+          <div class="info-card">
+            <div class="info-card__header">
+              <div class="info-card__icon-wrap" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M4 10H16M4 6H16M4 14H10" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/></svg>
+              </div>
+              <h3 class="info-card__title">Regla A - Traducciones</h3>
+            </div>
+            <ul class="info-card__list">
+              <li><span class="tag tag--original">ADJUSTMENT_CREDIT</span><span class="tag-arrow">-></span><span class="tag tag--translated">Ajuste de credito</span></li>
+              <li><span class="tag tag--original">ADJUSTMENT_DEBIT</span><span class="tag-arrow">-></span><span class="tag tag--translated">Ajuste de debito</span></li>
+              <li><span class="tag tag--original">CASHIN</span><span class="tag-arrow">-></span><span class="tag tag--translated">Ingreso de dinero</span></li>
+              <li><span class="tag tag--original">CASHOUT</span><span class="tag-arrow">-></span><span class="tag tag--translated">Retiro de dinero</span></li>
+              <li><span class="tag tag--original">CASHOUT_REVERSAL</span><span class="tag-arrow">-></span><span class="tag tag--translated">Reversa de retiro</span></li>
+              <li><span class="tag tag--original">SALES / VENTA</span><span class="tag-arrow">-></span><span class="tag tag--translated">Ventas</span></li>
+              <li><span class="tag tag--original">RECHARGE</span><span class="tag-arrow">-></span><span class="tag tag--translated">Recarga</span></li>
+              <li><span class="tag tag--original">TAX_CREDIT</span><span class="tag-arrow">-></span><span class="tag tag--translated">Impuesto al credito</span></li>
+              <li><span class="tag tag--original">TAX_DEBIT</span><span class="tag-arrow">-></span><span class="tag tag--translated">Impuesto al debito</span></li>
+            </ul>
+          </div>
+          <div class="info-card">
+            <div class="info-card__header">
+              <div class="info-card__icon-wrap" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="3" y="3" width="14" height="3" rx="1" fill="#FFFFFF" opacity="0.35"/><rect x="3" y="3" width="14" height="3" rx="1" stroke="#FFFFFF" stroke-width="1.5"/><path d="M3 9H17M3 14H17" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round"/></svg>
+              </div>
+              <h3 class="info-card__title">Regla B - Columnas</h3>
+            </div>
+            <ul class="info-card__list">
+              <li><span class="tag tag--original">Costo Arancel Monto</span><span class="tag-arrow">-></span><span class="tag tag--translated">Comision sin IVA</span></li>
+              <li><span class="tag tag--original">Costo Arancel IVA Monto</span><span class="tag-arrow">-></span><span class="tag tag--translated">IVA de la comision</span></li>
+              <li><span class="tag tag--original">Costo Financiero Total Monto</span><span class="tag-arrow">-></span><span class="tag tag--translated">CFT sin IVA</span></li>
+              <li><span class="tag tag--original">Costo Financiero Total IVA Monto</span><span class="tag-arrow">-></span><span class="tag tag--translated">IVA del CFT</span></li>
+              <li><span class="tag tag--original">ID EXTERNAL</span><span class="tag-arrow">-></span><span class="tag tag--translated">ID VENTA / ID COELSA</span></li>
+            </ul>
+          </div>
+          <div class="info-card">
+            <div class="info-card__header">
+              <div class="info-card__icon-wrap" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M5 10H15M10 5L15 10L10 15" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </div>
+              <h3 class="info-card__title">Regla C - Columnas eliminadas</h3>
+            </div>
+            <div class="info-card__subgroup">
+              <span class="info-card__subtitle">En Movimientos:</span>
+              <ul class="info-card__list">
+                <li><span class="tag tag--deleted">Telefono</span><span class="tag-arrow">-></span><span class="tag tag--translated">Eliminada</span></li>
+                <li><span class="tag tag--deleted">Subtipo</span><span class="tag-arrow">-></span><span class="tag tag--translated">Eliminada</span></li>
+              </ul>
+            </div>
+            <div class="info-card__subgroup" style="margin-top: 12px; padding-top: 12px; border-top: 1px dashed rgba(0,0,0,0.08);">
+              <span class="info-card__subtitle">En Transacciones:</span>
+              <ul class="info-card__list">
+                <li><span class="tag tag--deleted">Comercio Codigo</span><span class="tag-arrow">-></span><span class="tag tag--translated">Eliminada</span></li>
+                <li><span class="tag tag--deleted">Sucursal</span><span class="tag-arrow">-></span><span class="tag tag--translated">Eliminada</span></li>
+                <li><span class="tag tag--deleted">Moneda</span><span class="tag-arrow">-></span><span class="tag tag--translated">Eliminada</span></li>
+                <li><span class="tag tag--deleted">Condicion_IVA</span><span class="tag-arrow">-></span><span class="tag tag--translated">Eliminada</span></li>
+                <li><span class="tag tag--deleted">Mensaje Respuesta</span><span class="tag-arrow">-></span><span class="tag tag--translated">Eliminada</span></li>
+                <li><span class="tag tag--deleted">Geolocalización</span><span class="tag-arrow">-></span><span class="tag tag--translated">Eliminada</span></li>
+                <li><span class="tag tag--deleted">Rubro</span><span class="tag-arrow">-></span><span class="tag tag--translated">Eliminada</span></li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+      </main>
+
+    <footer class="footer" role="contentinfo">
+      <p class="footer__text">
+        <span>Los archivos son procesados localmente en tu navegador. Ningun dato es enviado a servidores externos.</span>
+      </p>
+    </footer>
+
+    <script src="xlsx-style.js"></script>
+    <script>
+      if (typeof XLSX === "undefined" || !XLSX.style_version) {
+        document.write('<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"><\/script>');
+      }
+    </script>
+    <script src="app.js?v=1788488000"></script>
+  </body>
+</html>
+
+
+
+
+
+
+
+
+
