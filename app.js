@@ -206,37 +206,55 @@ const TOTAL_SUM_COLUMNS = [
 let processedWorkbook  = null;
 let downloadFileName   = "Reporte_Movimientos.xlsx";
 let selectedReportMode = "auto"; // "auto" | "movimientos" | "transacciones"
+let selectedSistema    = "sirtac"; // "sirtac" (predeterminado) | "sircreb" | "sircupa"
+let isBotOnline        = false;
+let botCheckTimer      = null;
+
+// URL base del servicio Bot API (adaptable para local o para Render/Cloud)
+const BOT_API_BASE = (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
+  ? "http://127.0.0.1:3000"
+  : (window.SIRCREB_BOT_URL || "https://tu-bot-sircreb.onrender.com");
 
 
 /* =====================================================
    SECCION 4: REFERENCIAS AL DOM
    ===================================================== */
-const processorCard   = document.getElementById("processorCard");
-const dropzone        = document.getElementById("dropzone");
-const fileInput       = document.getElementById("fileInput");
-const stateIdle       = document.getElementById("stateIdle");
-const stateLoading    = document.getElementById("stateLoading");
-const stateSuccess    = document.getElementById("stateSuccess");
-const stateError      = document.getElementById("stateError");
-const headerBrand     = document.getElementById("headerBrand");
-const saldoToggleCard = document.getElementById("saldoToggleCard");
-const saldoToggle     = document.getElementById("saldoToggle");
-const saldoTxNotice   = document.getElementById("saldoTxNotice");
-const iibbToggleCard  = document.getElementById("iibbToggleCard");
-const iibbToggle      = document.getElementById("iibbToggle");
-const iibbMovNotice   = document.getElementById("iibbMovNotice");
-const alicuotaWrap    = document.getElementById("alicuotaWrap");
-const alicuotaSelect  = document.getElementById("alicuotaSelect");
-const typeBtnAuto     = document.getElementById("typeBtnAuto");
-const typeBtnMov      = document.getElementById("typeBtnMov");
-const typeBtnTx       = document.getElementById("typeBtnTx");
-const downloadBtn     = document.getElementById("downloadBtn");
-const resetBtn        = document.getElementById("resetBtn");
-const errorResetBtn   = document.getElementById("errorResetBtn");
-const errorMessage    = document.getElementById("errorMessage");
-const successMeta     = document.getElementById("successMeta");
-const loadingStatus   = document.getElementById("loadingStatus");
-const loadingSteps    = [
+const processorCard       = document.getElementById("processorCard");
+const dropzone            = document.getElementById("dropzone");
+const fileInput           = document.getElementById("fileInput");
+const stateIdle           = document.getElementById("stateIdle");
+const stateLoading        = document.getElementById("stateLoading");
+const stateSuccess        = document.getElementById("stateSuccess");
+const stateError          = document.getElementById("stateError");
+const headerBrand         = document.getElementById("headerBrand");
+const saldoToggleCard     = document.getElementById("saldoToggleCard");
+const saldoToggle         = document.getElementById("saldoToggle");
+const saldoTxNotice       = document.getElementById("saldoTxNotice");
+const iibbToggleCard      = document.getElementById("iibbToggleCard");
+const iibbToggle          = document.getElementById("iibbToggle");
+const iibbMovNotice       = document.getElementById("iibbMovNotice");
+const alicuotaWrap        = document.getElementById("alicuotaWrap");
+const alicuotaSelect      = document.getElementById("alicuotaSelect");
+const botStatusPill       = document.getElementById("botStatusPill");
+const botStatusDot        = document.getElementById("botStatusDot");
+const botStatusLabel      = document.getElementById("botStatusLabel");
+const botHint             = document.getElementById("botHint");
+const sisBtnSirtac        = document.getElementById("sisBtnSirtac");
+const sisBtnSircreb       = document.getElementById("sisBtnSircreb");
+const sisBtnSircupa       = document.getElementById("sisBtnSircupa");
+const autoAlicuotaCheck   = document.getElementById("autoAlicuotaCheck");
+const alicuotaSelectLabel = document.getElementById("alicuotaSelectLabel");
+const alicuotaSubdesc     = document.getElementById("alicuotaSubdesc");
+const typeBtnAuto         = document.getElementById("typeBtnAuto");
+const typeBtnMov          = document.getElementById("typeBtnMov");
+const typeBtnTx           = document.getElementById("typeBtnTx");
+const downloadBtn         = document.getElementById("downloadBtn");
+const resetBtn            = document.getElementById("resetBtn");
+const errorResetBtn       = document.getElementById("errorResetBtn");
+const errorMessage        = document.getElementById("errorMessage");
+const successMeta         = document.getElementById("successMeta");
+const loadingStatus       = document.getElementById("loadingStatus");
+const loadingSteps        = [
   document.getElementById("step1"),
   document.getElementById("step2"),
   document.getElementById("step3"),
@@ -339,8 +357,81 @@ function reset() {
   if (iibbToggle) iibbToggle.checked = false;
   if (alicuotaWrap) alicuotaWrap.style.display = "none";
   if (alicuotaSelect) alicuotaSelect.value = "0.0350";
+  if (autoAlicuotaCheck) autoAlicuotaCheck.checked = true;
+  setSistema("sirtac");
   setReportMode(selectedReportMode);
   showState("idle");
+}
+
+/**
+ * Comprueba el estado de conexión con el Bot local SIRTAC / SIRCREB / SIRCUPA.
+ */
+async function checkBotHealth() {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2000);
+    const res = await fetch(`${BOT_API_BASE}/api/health`, {
+      method: "GET",
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.status === "online") {
+        isBotOnline = true;
+        if (botStatusPill) {
+          botStatusPill.classList.add("online");
+        }
+        if (botStatusLabel) {
+          botStatusLabel.textContent = "Bot Conectado";
+        }
+        if (botHint) {
+          botHint.style.display = "none";
+        }
+        if (alicuotaSelectLabel) {
+          alicuotaSelectLabel.textContent = "Alícuota de respaldo:";
+        }
+        return true;
+      }
+    }
+  } catch (e) {
+    // Bot desconectado o no accesible
+  }
+
+  isBotOnline = false;
+  if (botStatusPill) {
+    botStatusPill.classList.remove("online");
+  }
+  if (botStatusLabel) {
+    botStatusLabel.textContent = "Bot Desconectado";
+  }
+  if (botHint) {
+    botHint.style.display = "inline";
+  }
+  if (alicuotaSelectLabel) {
+    alicuotaSelectLabel.textContent = "Alícuota a aplicar:";
+  }
+  return false;
+}
+
+/**
+ * Selecciona el sistema a consultar (sirtac, sircreb, sircupa).
+ */
+function setSistema(sistemaName) {
+  selectedSistema = (sistemaName || "sirtac").toLowerCase();
+  const buttons = [
+    { el: sisBtnSirtac, name: "sirtac" },
+    { el: sisBtnSircreb, name: "sircreb" },
+    { el: sisBtnSircupa, name: "sircupa" },
+  ];
+
+  buttons.forEach(({ el, name }) => {
+    if (!el) return;
+    const isActive = (name === selectedSistema);
+    el.classList.toggle("active", isActive);
+    el.setAttribute("aria-checked", isActive ? "true" : "false");
+  });
 }
 
 
@@ -973,8 +1064,89 @@ function parseAccreditationDate(v) {
  * y descuenta dicho importe de la columna Monto Neto.
  * Para ventas con acreditación futura (o pendientes no vencidas), la celda queda vacía y no descuenta.
  */
-function calculateRetencionIIBB(worksheet, alicuotaRate) {
-  if (!worksheet || !worksheet["!ref"]) return { calculatedCount: 0, pendingCount: 0 };
+/**
+ * Extrae los períodos únicos (año y mes) de ventas acreditadas en el archivo.
+ */
+function extractUniqueAccreditationPeriods(worksheet) {
+  if (!worksheet || !worksheet["!ref"]) return [];
+  const range = XLSX.utils.decode_range(worksheet["!ref"]);
+  const headerRow = range.s.r;
+
+  // Buscar columna de Fecha de Liberación / Acreditación
+  let dateCol = -1;
+  for (let c = range.s.c; c <= range.e.c; c++) {
+    const addr = XLSX.utils.encode_cell({ r: headerRow, c });
+    const cell = worksheet[addr];
+    if (!cell || cell.v === undefined) continue;
+    const name = normalizeString(cell.v);
+    if (name.includes("fecha") && (name.includes("liberacion") || name.includes("acreditacion"))) {
+      dateCol = c;
+      break;
+    }
+  }
+
+  if (dateCol === -1) {
+    for (let c = range.s.c; c <= range.e.c; c++) {
+      const addr = XLSX.utils.encode_cell({ r: headerRow, c });
+      const cell = worksheet[addr];
+      if (!cell || cell.v === undefined) continue;
+      const name = normalizeString(cell.v);
+      if (name.includes("fecha")) {
+        dateCol = c;
+        break;
+      }
+    }
+  }
+
+  if (dateCol === -1) return [];
+
+  const now = new Date();
+  const todayCutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+  const periodsMap = new Map();
+
+  for (let r = headerRow + 1; r <= range.e.r; r++) {
+    const addr = XLSX.utils.encode_cell({ r, c: dateCol });
+    const cell = worksheet[addr];
+    if (!cell || cell.v === undefined) continue;
+    const parsedD = parseAccreditationDate(cell.v);
+    if (parsedD && parsedD.getTime() <= todayCutoff.getTime()) {
+      const anio = parsedD.getFullYear();
+      const mes  = parsedD.getMonth() + 1;
+      const key  = `${anio}-${String(mes).padStart(2, '0')}`;
+      if (!periodsMap.has(key)) {
+        periodsMap.set(key, { anio, mes, key });
+      }
+    }
+  }
+
+  return Array.from(periodsMap.values());
+}
+
+/**
+ * Consulta la API local del Bot para obtener las alícuotas mensuales del CUIT.
+ */
+async function fetchBotAlicuotas(sistema, cuit, periods) {
+  const periodKeys = periods.map(p => p.key).join(",");
+  const url = `${BOT_API_BASE}/api/alicuotas?sistema=${encodeURIComponent(sistema)}&cuit=${encodeURIComponent(cuit)}&periodos=${encodeURIComponent(periodKeys)}`;
+
+  const res = await fetch(url);
+  if (!res.ok) {
+    const errJson = await res.json().catch(() => ({}));
+    throw new Error(errJson.error || `Error HTTP ${res.status}`);
+  }
+  return await res.json();
+}
+
+/**
+ * Calcula la Retención IIBB Convenio sobre Monto Bruto para transacciones acreditadas (Fecha Liberación <= hoy)
+ * y descuenta dicho importe de la columna Monto Neto.
+ * Soporta alícuotas dinámicas mensuales provistas por el Bot SIRTAC/SIRCREB/SIRCUPA
+ * con respaldo automático a la alícuota manual si ocurre algún error en períodos puntuales.
+ */
+function calculateRetencionIIBB(worksheet, alicuotasMap, fallbackRate = 0.0350, sistema = "sirtac") {
+  if (!worksheet || !worksheet["!ref"]) {
+    return { calculatedCount: 0, pendingCount: 0, periodStats: {}, warnings: [] };
+  }
   const range = XLSX.utils.decode_range(worksheet["!ref"]);
   const headerRow = range.s.r;
 
@@ -1012,7 +1184,7 @@ function calculateRetencionIIBB(worksheet, alicuotaRate) {
     }
   }
 
-  // Si no se encontró columna de Fecha Liberación por nombre exacto, buscar alguna columna con "liberacion" o "acreditacion"
+  // Búsqueda flexible de columna fecha liberación / acreditación
   if (dateCol === -1) {
     for (let c = range.s.c; c <= range.e.c; c++) {
       const addr = XLSX.utils.encode_cell({ r: headerRow, c });
@@ -1026,7 +1198,7 @@ function calculateRetencionIIBB(worksheet, alicuotaRate) {
     }
   }
 
-  // Si no se encontró columna de Retención IIBB en el archivo, crear una nueva columna al final
+  // Si no se encontró columna de Retención IIBB, crearla al final
   if (iibbCol === -1) {
     iibbCol = range.e.c + 1;
     range.e.c = iibbCol;
@@ -1037,14 +1209,16 @@ function calculateRetencionIIBB(worksheet, alicuotaRate) {
 
   if (brutoCol === -1 || netoCol === -1) {
     console.warn("[ReportePro] No se encontraron columnas de Monto Bruto o Monto Neto para calcular Retención IIBB.");
-    return { calculatedCount: 0, pendingCount: 0 };
+    return { calculatedCount: 0, pendingCount: 0, periodStats: {}, warnings: [] };
   }
 
   const now = new Date();
   const todayCutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
 
   let calculatedCount = 0;
-  let pendingCount = 0;
+  let pendingCount    = 0;
+  const periodStats   = {}; // periodKey -> { count, rate, alicuota, status, letra, error }
+  const warnings      = [];
 
   for (let r = headerRow + 1; r <= range.e.r; r++) {
     const brutoAddr = XLSX.utils.encode_cell({ r, c: brutoCol });
@@ -1079,7 +1253,7 @@ function calculateRetencionIIBB(worksheet, alicuotaRate) {
       }
     }
 
-    // Obtener cualquier valor previo de retención existente en la fila
+    // Obtener retención previa si ya existía
     let prevRetencion = 0;
     if (iibbCell && iibbCell.v !== undefined && iibbCell.v !== null && iibbCell.v !== "") {
       if (typeof iibbCell.v === "number") {
@@ -1093,10 +1267,11 @@ function calculateRetencionIIBB(worksheet, alicuotaRate) {
 
     // Verificar fecha de acreditación (Fecha Liberación <= hoy)
     let isAcreditada = true;
+    let parsedD = null;
     if (dateCol !== -1) {
       const dateAddr = XLSX.utils.encode_cell({ r, c: dateCol });
       const dateCell = worksheet[dateAddr];
-      const parsedD = dateCell ? parseAccreditationDate(dateCell.v) : null;
+      parsedD = dateCell ? parseAccreditationDate(dateCell.v) : null;
       if (parsedD) {
         isAcreditada = (parsedD.getTime() <= todayCutoff.getTime());
       } else {
@@ -1105,7 +1280,57 @@ function calculateRetencionIIBB(worksheet, alicuotaRate) {
     }
 
     if (isAcreditada) {
-      const retencion = Math.round(montoBruto * alicuotaRate * 100) / 100;
+      // Determinar la alícuota aplicable para este mes específico
+      let rateToApply = fallbackRate;
+      let alicPct = fallbackRate * 100;
+      let periodKey = parsedD ? `${parsedD.getFullYear()}-${String(parsedD.getMonth() + 1).padStart(2, '0')}` : "general";
+      let statusToRecord = "manual";
+      let letraToRecord = null;
+      let errorDetail = null;
+
+      if (alicuotasMap && alicuotasMap[periodKey] !== undefined) {
+        const pData = alicuotasMap[periodKey];
+        if (typeof pData === "number") {
+          rateToApply = pData;
+          alicPct = pData * 100;
+          statusToRecord = "ok";
+        } else if (typeof pData === "object" && pData !== null) {
+          if (pData.status === "ok") {
+            rateToApply = pData.rate;
+            alicPct = pData.alicuota;
+            statusToRecord = "ok";
+            letraToRecord = pData.letra;
+          } else if (pData.status === "not_included") {
+            rateToApply = 0.0;
+            alicPct = 0.0;
+            statusToRecord = "not_included";
+            letraToRecord = "A";
+          } else if (pData.status === "error") {
+            rateToApply = fallbackRate;
+            alicPct = fallbackRate * 100;
+            statusToRecord = "error";
+            errorDetail = pData.error;
+            if (!warnings.some(w => w.periodKey === periodKey)) {
+              warnings.push({ periodKey, error: pData.error });
+            }
+          }
+        }
+      }
+
+      // Registrar estadísticas por período
+      if (!periodStats[periodKey]) {
+        periodStats[periodKey] = {
+          count: 0,
+          rate: rateToApply,
+          alicuota: alicPct,
+          status: statusToRecord,
+          letra: letraToRecord,
+          error: errorDetail,
+        };
+      }
+      periodStats[periodKey].count++;
+
+      const retencion = Math.round(montoBruto * rateToApply * 100) / 100;
       const nuevoNeto = Math.round((montoNeto + prevRetencion - retencion) * 100) / 100;
 
       worksheet[iibbAddr] = {
@@ -1122,7 +1347,7 @@ function calculateRetencionIIBB(worksheet, alicuotaRate) {
 
       calculatedCount++;
     } else {
-      // Venta pendiente de acreditación o futura: debe quedar vacía y no descontar del neto
+      // Venta pendiente de acreditación o futura: no se descuenta
       const nuevoNeto = Math.round((montoNeto + prevRetencion) * 100) / 100;
       worksheet[netoAddr] = {
         t: "n",
@@ -1139,7 +1364,7 @@ function calculateRetencionIIBB(worksheet, alicuotaRate) {
     }
   }
 
-  return { calculatedCount, pendingCount };
+  return { calculatedCount, pendingCount, periodStats, warnings };
 }
 
 /**
@@ -1424,28 +1649,64 @@ async function processFile(file) {
 
     // Opciones del cálculo de Retención IIBB (solo Transacciones)
     const shouldCalculateIIBB = isTransacciones && (iibbToggle ? iibbToggle.checked : false);
-    const selectedAlicuota    = alicuotaSelect ? parseFloat(alicuotaSelect.value) : 0.0350;
-    const alicuotaRate        = isNaN(selectedAlicuota) ? 0.0350 : selectedAlicuota;
+    const fallbackAlicuota    = alicuotaSelect ? parseFloat(alicuotaSelect.value) : 0.0350;
+    const fallbackRate        = isNaN(fallbackAlicuota) ? 0.0350 : fallbackAlicuota;
+    const isAutoQueryWanted   = autoAlicuotaCheck ? autoAlicuotaCheck.checked : true;
     let totalIIBBCalculated   = 0;
     let totalIIBBPending      = 0;
+    let iibbPeriodStats       = {};
+    let iibbWarnings          = [];
+    let botRazonSocial        = null;
+    let botUsed               = false;
+
+    // Extracción temprana de CUIL/CUIT para consulta automática al Bot
+    let cuilValue = null;
+    for (const sheetName of workbook.SheetNames) {
+      cuilValue = extractCuilCuit(workbook.Sheets[sheetName]);
+      if (cuilValue) break;
+    }
+
+    // Consulta al Bot SIRTAC / SIRCREB / SIRCUPA si corresponde
+    let alicuotasMap = null;
+    if (shouldCalculateIIBB && isAutoQueryWanted && cuilValue) {
+      await checkBotHealth();
+      if (isBotOnline) {
+        // Recopilar períodos únicos de ventas acreditadas
+        const allPeriodsMap = new Map();
+        for (const sheetName of workbook.SheetNames) {
+          const sheetPeriods = extractUniqueAccreditationPeriods(workbook.Sheets[sheetName]);
+          sheetPeriods.forEach(p => allPeriodsMap.set(p.key, p));
+        }
+        const uniquePeriods = Array.from(allPeriodsMap.values());
+
+        if (uniquePeriods.length > 0) {
+          await advanceStep(0, `Consultando alícuotas ${selectedSistema.toUpperCase()} para CUIT ${cuilValue}...`, 400);
+          try {
+            const botResponse = await fetchBotAlicuotas(selectedSistema, cuilValue, uniquePeriods);
+            if (botResponse && botResponse.periodos) {
+              alicuotasMap = botResponse.periodos;
+              botRazonSocial = botResponse.razonSocial || null;
+              botUsed = true;
+            }
+          } catch (botErr) {
+            console.warn("[ReportePro] Falla en consulta al Bot SIRCREB:", botErr);
+            iibbWarnings.push({ periodKey: "Conexión Bot", error: botErr.message });
+          }
+        }
+      }
+    }
 
     // PASO 2: Aplicación de reglas y transformaciones
     await advanceStep(1, "Aplicando traducciones y reglas...", 700);
     let totalTranslations = 0;
     let totalRenames = 0;
     let totalDeleted = 0;
-    let cuilValue = null;
 
     for (const sheetName of workbook.SheetNames) {
       const ws = workbook.Sheets[sheetName];
 
       // Limpieza de filas excedentes/footers
       cleanFooterRows(ws);
-
-      // Extracción de CUIL/CUIT
-      if (!cuilValue) {
-        cuilValue = extractCuilCuit(ws);
-      }
 
       // Regla A: Traducciones de tipo
       const { translationCount } = applyTranslations(ws);
@@ -1457,9 +1718,20 @@ async function processFile(file) {
 
       // Cálculo de Retención IIBB Convenio (solo Transacciones si el switch está activo)
       if (shouldCalculateIIBB) {
-        const { calculatedCount, pendingCount } = calculateRetencionIIBB(ws, alicuotaRate);
+        const { calculatedCount, pendingCount, periodStats, warnings } = calculateRetencionIIBB(
+          ws,
+          alicuotasMap,
+          fallbackRate,
+          selectedSistema
+        );
         totalIIBBCalculated += calculatedCount;
         totalIIBBPending += pendingCount;
+        Object.assign(iibbPeriodStats, periodStats);
+        warnings.forEach(w => {
+          if (!iibbWarnings.some(item => item.periodKey === w.periodKey)) {
+            iibbWarnings.push(w);
+          }
+        });
       }
 
       // Regla C: Eliminación de columnas según tipo de reporte
@@ -1512,6 +1784,67 @@ async function processFile(file) {
       ? `<span class="badge badge--type-tx">Reporte de Transacciones</span>`
       : `<span class="badge badge--type-mov">Reporte de Movimientos</span>`;
 
+    // Generar bloque de resumen de Retención IIBB
+    let iibbSummaryHtml = "";
+    if (!isTransacciones) {
+      iibbSummaryHtml = `<span>Omitida (no aplica a Movimientos)</span>`;
+    } else if (!shouldCalculateIIBB) {
+      iibbSummaryHtml = `<span>No solicitada</span>`;
+    } else {
+      const periodsEntries = Object.entries(iibbPeriodStats);
+      let periodsListHtml = "";
+
+      if (periodsEntries.length > 0) {
+        periodsListHtml = `
+          <div class="period-breakdown">
+            <div class="period-breakdown__title">Alícuotas aplicadas por período (${selectedSistema.toUpperCase()}):</div>
+            <div class="period-breakdown__list">
+              ${periodsEntries.map(([pkey, pdata]) => {
+                let badgeClass = "period-item__badge--ok";
+                let statusLabel = `${(pdata.alicuota).toFixed(2).replace('.', ',')}%`;
+                if (pdata.letra) statusLabel += ` (${pdata.letra})`;
+                if (pdata.status === "not_included") {
+                  badgeClass = "period-item__badge--zero";
+                  statusLabel = "0,00% (No retiene)";
+                } else if (pdata.status === "error") {
+                  badgeClass = "period-item__badge--err";
+                  statusLabel = `${(pdata.alicuota).toFixed(2).replace('.', ',')}% (Respaldo)`;
+                }
+
+                return `
+                  <div class="period-item">
+                    <span class="period-item__label">Período ${escapeHtml(pkey)}:</span>
+                    <span>${pdata.count} venta(s) &nbsp; <span class="period-item__badge ${badgeClass}">${statusLabel}</span></span>
+                  </div>
+                `;
+              }).join("")}
+            </div>
+          </div>
+        `;
+      }
+
+      let warningsHtml = "";
+      if (iibbWarnings.length > 0) {
+        warningsHtml = `
+          <div style="margin-top: 8px; font-size: 11.5px; color: #be123c; background: #fff1f2; padding: 6px 10px; border-radius: 6px;">
+            ⚠️ <strong>Avisos de consulta:</strong>
+            ${iibbWarnings.map(w => `<div>• ${escapeHtml(w.periodKey)}: ${escapeHtml(w.error)}</div>`).join("")}
+          </div>
+        `;
+      }
+
+      iibbSummaryHtml = `
+        <div>
+          <div>Calculada para <strong>${totalIIBBCalculated}</strong> venta(s) acreditada(s)${totalIIBBPending > 0 ? `, ${totalIIBBPending} pendiente(s)` : ""}</div>
+          <div style="font-size: 12px; color: var(--color-text-2); margin-top: 2px;">
+            Modo: <strong>${botUsed ? `Automático (${selectedSistema.toUpperCase()})` : "Manual de respaldo"}</strong>
+          </div>
+          ${periodsListHtml}
+          ${warningsHtml}
+        </div>
+      `;
+    }
+
     // Renderizar metadata de éxito
     successMeta.innerHTML = `
       <div class="success-meta-row">
@@ -1540,7 +1873,7 @@ async function processFile(file) {
       </div>
       ${cuilValue ? `<div class="success-meta-row">
         <span class="success-meta-label">CUIL/CUIT detectado:</span>
-        <span class="success-meta-value">${escapeHtml(cuilValue)}</span>
+        <span class="success-meta-value">${escapeHtml(cuilValue)}${botRazonSocial ? ` (${escapeHtml(botRazonSocial)})` : ""}</span>
       </div>` : ""}
       <div class="success-meta-row">
         <span class="success-meta-label">Columna Saldo:</span>
@@ -1548,7 +1881,7 @@ async function processFile(file) {
       </div>
       <div class="success-meta-row">
         <span class="success-meta-label">Retención IIBB:</span>
-        <span>${!isTransacciones ? "Omitida (no aplica a Movimientos)" : (shouldCalculateIIBB ? `Calculada al ${(alicuotaRate * 100).toFixed(2).replace('.', ',')}% (${totalIIBBCalculated} venta(s) acreditada(s)${totalIIBBPending > 0 ? `, ${totalIIBBPending} pendiente(s)` : ""})` : "No solicitada")}</span>
+        <div>${iibbSummaryHtml}</div>
       </div>
     `;
 
@@ -1686,9 +2019,17 @@ if (iibbToggle) {
   iibbToggle.addEventListener("change", () => {
     if (alicuotaWrap) {
       alicuotaWrap.style.display = iibbToggle.checked ? "flex" : "none";
+      if (iibbToggle.checked) {
+        checkBotHealth();
+      }
     }
   });
 }
+
+/* --- Eventos de Selección de Sistema (SIRTAC / SIRCREB / SIRCUPA) --- */
+if (sisBtnSirtac)  sisBtnSirtac.addEventListener("click", () => setSistema("sirtac"));
+if (sisBtnSircreb) sisBtnSircreb.addEventListener("click", () => setSistema("sircreb"));
+if (sisBtnSircupa) sisBtnSircupa.addEventListener("click", () => setSistema("sircupa"));
 
 /* --- Botones de Descarga y Reinicio --- */
 downloadBtn.addEventListener("click", downloadFile);
@@ -1715,3 +2056,7 @@ if (headerBrand) {
     }
   });
 }
+
+/* --- Inicialización de chequeo del Bot al cargar la página --- */
+checkBotHealth();
+setInterval(checkBotHealth, 8000);

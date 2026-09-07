@@ -1,0 +1,24 @@
+{
+  "name": "reporteria-sircreb-bot",
+  "version": "1.0.0",
+  "description": "Bot y API de consulta automatizada de alícuotas SIRTAC, SIRCREB y SIRCUPA para Reportería Bezza Pay",
+  "main": "sircreb-server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node sircreb-server.js",
+    "bot": "node sircreb-server.js"
+  },
+  "keywords": [
+    "sircreb",
+    "sirtac",
+    "sircupa",
+    "bezzapay",
+    "reporteria"
+  ],
+  "author": "Bezza Pay",
+  "license": "ISC",
+  "dependencies": {
+    "puppeteer-core": "^24.4.0",
+    "xlsx": "^0.18.5"
+  }
+}

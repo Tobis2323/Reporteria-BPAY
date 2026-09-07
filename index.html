@@ -9,6 +9,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="style.css" />
+    <!-- Logo de la página:-->
+    <link rel="shortcut icon" href="Logo.png" type="image/png" >
   </head>
   <body>
     <header class="header" role="banner">
@@ -86,6 +88,7 @@
                 <span class="toggle-control__content">
                   <span class="toggle-control__title">
                     Calcular Retención IIBB
+                    <span class="badge badge--dev">En desarrollo</span>
                     <span class="badge badge--mov-notice" id="iibbMovNotice" style="display: none;">No aplica a Movimientos</span>
                   </span>
                   <span class="toggle-control__desc" id="iibbDesc">Calcula Retención IIBB Convenio sobre Monto Bruto y recalcula Monto Neto (solo ventas acreditadas hoy o anterior)</span>
@@ -94,35 +97,83 @@
 
               <!-- SELECTOR DE ALICUOTA (se despliega al activar el switch) -->
               <div class="alicuota-selector-wrap" id="alicuotaWrap" style="display: none;">
-                <label for="alicuotaSelect" class="alicuota-label">Alícuota:</label>
-                <select id="alicuotaSelect" class="alicuota-select">
-                  <option value="0.0000">A: 0,0 %</option>
-                  <option value="0.0001">B: 0,01 %</option>
-                  <option value="0.0005">C: 0,05 %</option>
-                  <option value="0.0010">D: 0,10 %</option>
-                  <option value="0.0020">E: 0,20 %</option>
-                  <option value="0.0030">F: 0,30 %</option>
-                  <option value="0.0040">G: 0,40 %</option>
-                  <option value="0.0050">H: 0,50 %</option>
-                  <option value="0.0060">I: 0,60 %</option>
-                  <option value="0.0070">J: 0,70 %</option>
-                  <option value="0.0080">K: 0,80 %</option>
-                  <option value="0.0090">L: 0,90 %</option>
-                  <option value="0.0100">M: 1,00 %</option>
-                  <option value="0.0110">N: 1,10 %</option>
-                  <option value="0.0120">O: 1,20 %</option>
-                  <option value="0.0130">P: 1,30 %</option>
-                  <option value="0.0140">Q: 1,40 %</option>
-                  <option value="0.0150">R: 1,50 %</option>
-                  <option value="0.0170">S: 1,70 %</option>
-                  <option value="0.0200">T: 2,00 %</option>
-                  <option value="0.0250">U: 2,50 %</option>
-                  <option value="0.0300">V: 3,00 %</option>
-                  <option value="0.0350" selected>W: 3,50 %</option>
-                  <option value="0.0400">X: 4,00 %</option>
-                  <option value="0.0450">Y: 4,50 %</option>
-                  <option value="0.0500">Z: 5,00 %</option>
-                </select>
+                
+                <!-- Cartel de apartado en desarrollo -->
+                <div class="dev-banner">
+                  <span class="dev-banner__badge">EN DESARROLLO</span>
+                  <span class="dev-banner__text">Apartado en desarrollo: Consulta automática de alícuotas mensuales en fase de pruebas.</span>
+                </div>
+
+                <!-- Indicador de estado del Bot -->
+                <div class="bot-status-bar">
+                  <div class="bot-status-pill" id="botStatusPill" title="Estado de la conexión local con el Bot SIRTAC/SIRCREB">
+                    <span class="bot-status-dot" id="botStatusDot"></span>
+                    <span class="bot-status-label" id="botStatusLabel">Detectando Bot...</span>
+                  </div>
+                  <span class="bot-hint" id="botHint">Inicia <code>iniciar_sircreb.bat</code> para alícuota automática</span>
+                </div>
+
+                <!-- Selector de Sistema (SIRTAC predeterminado) -->
+                <div class="sistema-bar" role="radiogroup" aria-label="Sistema de padrón a consultar">
+                  <span class="sistema-bar__label">Padrón:</span>
+                  <div class="sistema-options">
+                    <button type="button" class="sistema-btn active" data-sistema="sirtac" id="sisBtnSirtac" role="radio" aria-checked="true" title="SIRTAC (Retención sobre tarjetas y billeteras - Predeterminado)">
+                      <span class="sistema-btn__text">SIRTAC</span>
+                      <span class="sistema-btn__tag">Predeterminado</span>
+                    </button>
+                    <button type="button" class="sistema-btn" data-sistema="sircreb" id="sisBtnSircreb" role="radio" aria-checked="false" title="SIRCREB (Acreditaciones bancarias)">
+                      <span class="sistema-btn__text">SIRCREB</span>
+                    </button>
+                    <button type="button" class="sistema-btn" data-sistema="sircupa" id="sisBtnSircupa" role="radio" aria-checked="false" title="SIRCUPA (Cuentas de pago)">
+                      <span class="sistema-btn__text">SIRCUPA</span>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Checkbox de consulta automática mensual -->
+                <div class="auto-alicuota-row">
+                  <label class="auto-alicuota-toggle" for="autoAlicuotaCheck">
+                    <input type="checkbox" id="autoAlicuotaCheck" class="auto-alicuota-input" checked />
+                    <span class="auto-alicuota-box"></span>
+                    <span class="auto-alicuota-text">Consultar alícuota automáticamente por mes</span>
+                  </label>
+                </div>
+
+                <!-- Selector de Alícuota Manual / Respaldo -->
+                <div class="fallback-alicuota-row">
+                  <label for="alicuotaSelect" class="alicuota-label" id="alicuotaSelectLabel">Alícuota de respaldo:</label>
+                  <select id="alicuotaSelect" class="alicuota-select">
+                    <option value="0.0000">A: 0,0 %</option>
+                    <option value="0.0001">B: 0,01 %</option>
+                    <option value="0.0005">C: 0,05 %</option>
+                    <option value="0.0010">D: 0,10 %</option>
+                    <option value="0.0020">E: 0,20 %</option>
+                    <option value="0.0030">F: 0,30 %</option>
+                    <option value="0.0040">G: 0,40 %</option>
+                    <option value="0.0050">H: 0,50 %</option>
+                    <option value="0.0060">I: 0,60 %</option>
+                    <option value="0.0070">J: 0,70 %</option>
+                    <option value="0.0080">K: 0,80 %</option>
+                    <option value="0.0090">L: 0,90 %</option>
+                    <option value="0.0100">M: 1,00 %</option>
+                    <option value="0.0110">N: 1,10 %</option>
+                    <option value="0.0120">O: 1,20 %</option>
+                    <option value="0.0130">P: 1,30 %</option>
+                    <option value="0.0140">Q: 1,40 %</option>
+                    <option value="0.0150">R: 1,50 %</option>
+                    <option value="0.0170">S: 1,70 %</option>
+                    <option value="0.0200">T: 2,00 %</option>
+                    <option value="0.0250">U: 2,50 %</option>
+                    <option value="0.0300">V: 3,00 %</option>
+                    <option value="0.0350" selected>W: 3,50 %</option>
+                    <option value="0.0400">X: 4,00 %</option>
+                    <option value="0.0450">Y: 4,50 %</option>
+                    <option value="0.0500">Z: 5,00 %</option>
+                  </select>
+                </div>
+                <p class="alicuota-subdesc" id="alicuotaSubdesc">
+                  Se aplica si el Bot no está disponible o ante errores en períodos específicos.
+                </p>
               </div>
             </div>
 
