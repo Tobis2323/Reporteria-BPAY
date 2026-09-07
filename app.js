@@ -586,6 +586,7 @@ function autoFitColumns(worksheet) {
  * Corrige los formatos numéricos y de fecha de las celdas:
  * - Fechas -> dd/mm/yyyy hh:mm:ss
  * - Monedas/Montos -> $#,##0.00
+ * - Documentos/DNI -> Número entero (cell.t = "n", z = "0")
  */
 function fixCellFormats(worksheet) {
   if (!worksheet || !worksheet["!ref"]) return;
@@ -594,6 +595,7 @@ function fixCellFormats(worksheet) {
 
   const dateCols = [];
   const moneyCols = [];
+  const integerCols = [];
 
   for (let c = range.s.c; c <= range.e.c; c++) {
     const addr = XLSX.utils.encode_cell({ r: headerRow, c });
@@ -611,11 +613,19 @@ function fixCellFormats(worksheet) {
       name.includes("iva") ||
       name.includes("cft") ||
       name.includes("arancel") ||
-      name.includes("costo")
+      name.includes("costo") ||
+      name.includes("retencion")
     ) {
-      if (!name.includes("condicion")) {
+      if (!name.includes("condicion") && !name.includes("descripcion")) {
         moneyCols.push(c);
       }
+    } else if (
+      name.includes("documento") ||
+      name.includes("tarjeta habiente") ||
+      name.includes("tarjetahabiente") ||
+      name.includes("dni")
+    ) {
+      integerCols.push(c);
     }
   }
 
@@ -647,6 +657,31 @@ function fixCellFormats(worksheet) {
 
       delete cell.w;
       cell.z = "$#,##0.00";
+    }
+
+    // Formatear columnas de documento / enteros (Número entero sin decimales)
+    for (const c of integerCols) {
+      const addr = XLSX.utils.encode_cell({ r, c });
+      const cell = worksheet[addr];
+      if (!cell || cell.v === undefined || cell.v === null || cell.v === "" || cell.v === " ") continue;
+
+      if (typeof cell.v === "string") {
+        const cleaned = cell.v.trim().replace(/[.\s]/g, "");
+        if (/^\d+$/.test(cleaned)) {
+          const num = parseInt(cleaned, 10);
+          if (!isNaN(num)) {
+            cell.v = num;
+            cell.t = "n";
+          }
+        }
+      } else if (typeof cell.v === "number") {
+        cell.t = "n";
+      }
+
+      if (cell.t === "n") {
+        delete cell.w;
+        cell.z = "0"; // Formato numérico entero nativo en Excel ("Número" con 0 decimales)
+      }
     }
   }
 }
