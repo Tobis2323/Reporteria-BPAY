@@ -16,6 +16,10 @@
        -> Agrega el nombre en minuscula sin acentos en:
           COLUMNS_TO_DELETE_MOVIMIENTOS o COLUMNS_TO_DELETE_TRANSACCIONES
 
+   - Regla C Dinámica (Eliminar solo si están completamente vacías):
+       -> Agrega el nombre en COLUMNS_TO_DELETE_IF_EMPTY:
+          Se eliminan únicamente si no hay datos en ninguna fila. Si al menos una fila tiene datos, se conserva.
+
    ===================================================== */
 
 /* =====================================================
@@ -51,6 +55,25 @@ function escapeHtml(str) {
     .replace(/"/g, "&quot;");
 }
 
+/**
+ * Determina si una celda se considera vacía o sin datos relevantes.
+ * Es vacía si no existe, es null/undefined, string vacío/espacios, o valor 0 / "-" / "0.00".
+ */
+function isCellEmpty(cell) {
+  if (!cell || cell.v === undefined || cell.v === null) return true;
+  const str = String(cell.v).trim();
+  if (str === "" || str === "-" || str === "--" || str.toLowerCase() === "null" || str.toLowerCase() === "undefined") {
+    return true;
+  }
+  if (str === "0" || str === "0.00" || str === "$0.00" || str === "$ 0.00") {
+    return true;
+  }
+  if (typeof cell.v === "number" && cell.v === 0) {
+    return true;
+  }
+  return false;
+}
+
 
 /* =====================================================
    SECCION 2: CONFIGURACION DE REGLAS Y DICCIONARIOS
@@ -84,6 +107,7 @@ const COLUMN_RENAMES = {
   "costo financiero total monto":         "CFT sin IVA",
   "costo financiero total iva monto":     "IVA del CFT",
   "id external":                          "ID VENTA / ID COELSA",
+  "liberacion categorico":                "Plazo de acreditación",
 };
 
 /**
@@ -115,6 +139,20 @@ const COLUMNS_TO_DELETE_TRANSACCIONES = [
   "mensaje respuesta",
   "geolocalizacion",
   "rubro",
+  "retencion iibb penalidad descripcion",
+];
+
+/**
+ * REGLA C DINÁMICA: Columnas que se eliminan ÚNICAMENTE si están 100% vacías en todas las filas.
+ * Si al menos una sola fila contiene un dato o importe válido, la columna SE CONSERVA.
+ */
+const COLUMNS_TO_DELETE_IF_EMPTY = [
+  "retencion ganancia",
+  "retencion ganancias",
+  "retencion iibb penalidad",
+  "retencion ingresos brutos penalidad",
+  "documento tarjeta habiente",
+  "documento tarjetahabiente",
 ];
 
 /**
@@ -401,8 +439,40 @@ function deleteColumns(worksheet, reportType = "movimientos") {
     const cell = worksheet[addr];
     if (!cell || cell.v === undefined) continue;
     const headerNorm = normalizeString(cell.v);
-    const match = targetList.some(target => headerNorm === target);
-    if (match) colsToDelete.push(c);
+    const compactHeader = headerNorm.replace(/\s+/g, "");
+
+    // 1. Verificación de eliminación obligatoria según tipo de reporte
+    const isStaticDelete = targetList.some(target => {
+      const norm = normalizeString(target);
+      return headerNorm === norm || compactHeader === norm.replace(/\s+/g, "");
+    });
+
+    if (isStaticDelete) {
+      colsToDelete.push(c);
+      continue;
+    }
+
+    // 2. Verificación de eliminación condicional (solo si todas las celdas de la columna están vacías)
+    const isConditionalCandidate = COLUMNS_TO_DELETE_IF_EMPTY.some(target => {
+      const norm = normalizeString(target);
+      return headerNorm === norm || compactHeader === norm.replace(/\s+/g, "");
+    });
+
+    if (isConditionalCandidate) {
+      let hasAnyData = false;
+      for (let r = headerRow + 1; r <= range.e.r; r++) {
+        const dataAddr = XLSX.utils.encode_cell({ r, c });
+        const dataCell = worksheet[dataAddr];
+        if (!isCellEmpty(dataCell)) {
+          hasAnyData = true;
+          break;
+        }
+      }
+      // Si ninguna celda tiene datos, se elimina la columna
+      if (!hasAnyData) {
+        colsToDelete.push(c);
+      }
+    }
   }
 
   if (colsToDelete.length === 0) return { worksheet, deletedCount: 0 };
