@@ -108,6 +108,10 @@ const COLUMN_RENAMES = {
   "costo financiero total iva monto":     "IVA del CFT",
   "id external":                          "ID VENTA / ID COELSA",
   "liberacion categorico":                "Plazo de acreditación",
+  "retencion iibb convenio":              "Retencion IIBB",
+  "retencion iibb penalidad":             "Retencion IIBB Penalidad",
+  "retencion ganancia":                   "Retencion Ganancias",
+  "retencion ganancias":                  "Retencion Ganancias",
 };
 
 /**
@@ -404,12 +408,30 @@ function applyColumnRenames(worksheet) {
   const headerRow = range.s.r;
   let count = 0;
 
+  // Normalizar diccionario de renombres para tolerar mayúsculas, guiones bajos, espacios y acentos
+  const normRenames = {};
+  for (const [k, v] of Object.entries(COLUMN_RENAMES)) {
+    normRenames[normalizeString(k)] = v;
+  }
+
   for (let c = range.s.c; c <= range.e.c; c++) {
     const addr = XLSX.utils.encode_cell({ r: headerRow, c });
     const cell = worksheet[addr];
     if (!cell || cell.v === undefined) continue;
     const headerNorm = normalizeString(cell.v);
-    const newName = COLUMN_RENAMES[headerNorm];
+    const compactHeader = headerNorm.replace(/\s+/g, "");
+
+    // Coincidencia directa o compacta (sin espacios)
+    let newName = normRenames[headerNorm];
+    if (!newName) {
+      for (const [k, v] of Object.entries(normRenames)) {
+        if (k.replace(/\s+/g, "") === compactHeader) {
+          newName = v;
+          break;
+        }
+      }
+    }
+
     if (newName) {
       cell.v = newName;
       cell.w = newName;
