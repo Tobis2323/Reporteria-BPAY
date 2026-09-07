@@ -182,6 +182,23 @@ const TRANSACTION_INDICATORS = [
   "fecha liberacion",
 ];
 
+/**
+ * Columnas monetarias a sumarizar en la fila final de TOTALES.
+ */
+const TOTAL_SUM_COLUMNS = [
+  "monto bruto",
+  "comision sin iva",
+  "iva de la comision",
+  "cft sin iva",
+  "iva del cft",
+  "retencion iibb",
+  "retencion iibb convenio",
+  "retencion iibb penalidad",
+  "retencion ganancia",
+  "retencion ganancias",
+  "monto neto",
+];
+
 
 /* =====================================================
    SECCION 3: ESTADO GLOBAL DE LA APLICACION
@@ -999,6 +1016,113 @@ function cleanFooterRows(worksheet) {
   worksheet["!ref"] = XLSX.utils.encode_range(range);
 }
 
+/**
+ * Agrega una fila final con el cálculo de TOTALES para las columnas monetarias clave,
+ * aplicando exactamente el mismo estilo visual del encabezado (fondo #D00070, tipografía blanca y negrita).
+ */
+function appendTotalRow(worksheet) {
+  if (!worksheet || !worksheet["!ref"]) return;
+  const range = XLSX.utils.decode_range(worksheet["!ref"]);
+  const headerRow = range.s.r;
+  const dataEndRow = range.e.r;
+
+  // Si no hay filas de datos, salir
+  if (dataEndRow <= headerRow) return;
+
+  // Identificar qué columnas deben sumarse según sus encabezados
+  const sumCols = new Map();
+
+  for (let c = range.s.c; c <= range.e.c; c++) {
+    const addr = XLSX.utils.encode_cell({ r: headerRow, c });
+    const cell = worksheet[addr];
+    if (!cell || cell.v === undefined) continue;
+    const headerNorm = normalizeString(cell.v);
+    const compactHeader = headerNorm.replace(/\s+/g, "");
+
+    const isMatch = TOTAL_SUM_COLUMNS.some(target => {
+      const norm = normalizeString(target);
+      return headerNorm === norm || compactHeader === norm.replace(/\s+/g, "");
+    });
+
+    if (isMatch) {
+      sumCols.set(c, { sum: 0 });
+    }
+  }
+
+  // Sumar los valores numéricos fila por fila
+  for (let r = headerRow + 1; r <= dataEndRow; r++) {
+    for (const [colIndex, data] of sumCols.entries()) {
+      const addr = XLSX.utils.encode_cell({ r, c: colIndex });
+      const cell = worksheet[addr];
+      if (!cell || cell.v === undefined || cell.v === null) continue;
+
+      let val = 0;
+      if (typeof cell.v === "number") {
+        val = isNaN(cell.v) ? 0 : cell.v;
+      } else if (typeof cell.v === "string") {
+        const cleaned = cell.v.replace(/[$\s]/g, "").replace(",", ".");
+        const parsed = parseFloat(cleaned);
+        if (!isNaN(parsed)) val = parsed;
+      }
+
+      data.sum = Math.round((data.sum + val) * 100) / 100;
+    }
+  }
+
+  const totalRowIndex = dataEndRow + 1;
+  const HEADER_BG_COLOR = "D00070";
+  const HEADER_FONT_COLOR = "FFFFFF";
+
+  for (let c = range.s.c; c <= range.e.c; c++) {
+    const totalAddr = XLSX.utils.encode_cell({ r: totalRowIndex, c });
+    let cell;
+
+    if (c === range.s.c) {
+      // Primera columna: Etiqueta TOTAL
+      cell = {
+        t: "s",
+        v: "TOTAL",
+        w: "TOTAL",
+        s: {
+          fill: { patternType: "solid", fgColor: { rgb: HEADER_BG_COLOR } },
+          font: { name: "Calibri", sz: 11, bold: true, color: { rgb: HEADER_FONT_COLOR } },
+          alignment: { vertical: "center", horizontal: "center" },
+        },
+      };
+    } else if (sumCols.has(c)) {
+      // Columnas con suma calculada
+      const colData = sumCols.get(c);
+      cell = {
+        t: "n",
+        v: colData.sum,
+        z: "$#,##0.00",
+        s: {
+          fill: { patternType: "solid", fgColor: { rgb: HEADER_BG_COLOR } },
+          font: { name: "Calibri", sz: 11, bold: true, color: { rgb: HEADER_FONT_COLOR } },
+          alignment: { vertical: "center", horizontal: "right" },
+        },
+      };
+    } else {
+      // Columnas sin suma: celda vacía con el estilo de fondo del encabezado
+      cell = {
+        t: "s",
+        v: " ",
+        s: {
+          fill: { patternType: "solid", fgColor: { rgb: HEADER_BG_COLOR } },
+          font: { name: "Calibri", sz: 11, bold: true, color: { rgb: HEADER_FONT_COLOR } },
+          alignment: { vertical: "center", horizontal: "center" },
+        },
+      };
+    }
+
+    worksheet[totalAddr] = cell;
+  }
+
+  // Actualizar el rango final de la hoja para incluir la fila de TOTAL
+  range.e.r = totalRowIndex;
+  worksheet["!ref"] = XLSX.utils.encode_range(range);
+}
+
 
 /* =====================================================
    SECCION 7: PROCESAMIENTO PRINCIPAL Y DESCARGA
@@ -1075,7 +1199,10 @@ async function processFile(file) {
       // Estilos visuales (Zebra striping y destaque de Monto Neto)
       applyRowAndColumnStyles(ws);
 
-      // Autoajuste de anchos de columna al contenido visible
+      // Fila final de Totales con estilo de encabezado (#D00070)
+      appendTotalRow(ws);
+
+      // Autoajuste de anchos de columna al contenido visible (incluyendo totales)
       autoFitColumns(ws);
 
       // Estilo del encabezado (#D00070)
