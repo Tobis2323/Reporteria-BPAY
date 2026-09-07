@@ -98,6 +98,7 @@ async function getBrowser() {
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
         '--disable-gpu',
+        '--no-zygote',
         '--window-size=1280,800',
       ],
     });
@@ -114,7 +115,7 @@ function scheduleBrowserClose() {
       } catch (e) {}
       sharedBrowser = null;
     }
-  }, 25000); // Mantiene el navegador caliente durante 25s por si llegan más solicitudes
+  }, 35000); // Mantiene el navegador caliente durante 35s por si llegan más solicitudes
 }
 
 /**
@@ -177,9 +178,12 @@ export async function queryComarbPadron(sistema = 'sirtac', cuit, periodos = [])
     });
 
     await page.goto('https://sircreb.comarb.gob.ar/sircreb/contribuyente/', {
-      waitUntil: 'networkidle2',
+      waitUntil: 'domcontentloaded',
       timeout: 30000,
     });
+
+    // Esperar a que el campo CUIT esté presente e interactivo
+    await page.waitForSelector('input[name="cuit"]', { timeout: 20000 });
 
     // 1. Seleccionar el sistema (SIRTAC, SIRCREB, SIRCUPA)
     const radioSelector = `input[name="sistema"][value="${sisNorm}"]`;

@@ -210,10 +210,13 @@ let selectedSistema    = "sirtac"; // "sirtac" (predeterminado) | "sircreb" | "s
 let isBotOnline        = false;
 let botCheckTimer      = null;
 
-// URL base del servicio Bot API (adaptable para local o para Render/Cloud)
-const BOT_API_BASE = (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
-  ? "http://127.0.0.1:3000"
-  : (window.SIRCREB_BOT_URL || "https://tu-bot-sircreb.onrender.com");
+// URLs del servicio Bot API (Nube Render y local)
+const RENDER_BOT_URL = "https://sircreb-bot.onrender.com";
+const LOCAL_BOT_URL  = "http://127.0.0.1:3000";
+let BOT_API_BASE     = (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
+  ? LOCAL_BOT_URL
+  : (window.SIRCREB_BOT_URL || RENDER_BOT_URL);
+
 
 
 /* =====================================================
@@ -367,51 +370,44 @@ function reset() {
  * Comprueba el estado de conexión con el Bot local SIRTAC / SIRCREB / SIRCUPA.
  */
 async function checkBotHealth() {
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2000);
-    const res = await fetch(`${BOT_API_BASE}/api/health`, {
-      method: "GET",
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
+  const candidateUrls = [];
+  if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+    candidateUrls.push(LOCAL_BOT_URL);
+  }
+  candidateUrls.push(RENDER_BOT_URL);
 
-    if (res.ok) {
-      const data = await res.json();
-      if (data.status === "online") {
-        isBotOnline = true;
-        if (botStatusPill) {
-          botStatusPill.classList.add("online");
+  for (const url of candidateUrls) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3500);
+      const res = await fetch(`${url}/api/health`, {
+        method: "GET",
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.status === "online") {
+          BOT_API_BASE = url;
+          isBotOnline = true;
+          if (botStatusPill) botStatusPill.classList.add("online");
+          if (botStatusLabel) botStatusLabel.textContent = url.includes("render") ? "Bot en la Nube (Online)" : "Bot Conectado";
+          if (botHint) botHint.style.display = "none";
+          if (alicuotaSelectLabel) alicuotaSelectLabel.textContent = "Alícuota de respaldo:";
+          return true;
         }
-        if (botStatusLabel) {
-          botStatusLabel.textContent = "Bot Conectado";
-        }
-        if (botHint) {
-          botHint.style.display = "none";
-        }
-        if (alicuotaSelectLabel) {
-          alicuotaSelectLabel.textContent = "Alícuota de respaldo:";
-        }
-        return true;
       }
+    } catch (e) {
+      // Intentar con siguiente candidato
     }
-  } catch (e) {
-    // Bot desconectado o no accesible
   }
 
   isBotOnline = false;
-  if (botStatusPill) {
-    botStatusPill.classList.remove("online");
-  }
-  if (botStatusLabel) {
-    botStatusLabel.textContent = "Bot Desconectado";
-  }
-  if (botHint) {
-    botHint.style.display = "inline";
-  }
-  if (alicuotaSelectLabel) {
-    alicuotaSelectLabel.textContent = "Alícuota a aplicar:";
-  }
+  if (botStatusPill) botStatusPill.classList.remove("online");
+  if (botStatusLabel) botStatusLabel.textContent = "Bot Desconectado";
+  if (botHint) botHint.style.display = "inline";
+  if (alicuotaSelectLabel) alicuotaSelectLabel.textContent = "Alícuota a aplicar:";
   return false;
 }
 
