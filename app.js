@@ -222,6 +222,11 @@ const headerBrand     = document.getElementById("headerBrand");
 const saldoToggleCard = document.getElementById("saldoToggleCard");
 const saldoToggle     = document.getElementById("saldoToggle");
 const saldoTxNotice   = document.getElementById("saldoTxNotice");
+const iibbToggleCard  = document.getElementById("iibbToggleCard");
+const iibbToggle      = document.getElementById("iibbToggle");
+const iibbMovNotice   = document.getElementById("iibbMovNotice");
+const alicuotaWrap    = document.getElementById("alicuotaWrap");
+const alicuotaSelect  = document.getElementById("alicuotaSelect");
 const typeBtnAuto     = document.getElementById("typeBtnAuto");
 const typeBtnMov      = document.getElementById("typeBtnMov");
 const typeBtnTx       = document.getElementById("typeBtnTx");
@@ -289,13 +294,37 @@ function setReportMode(mode) {
   });
 
   if (mode === "transacciones") {
+    // Saldo no aplica a Transacciones
     if (saldoToggleCard) saldoToggleCard.classList.add("disabled");
     if (saldoTxNotice) saldoTxNotice.style.display = "inline-flex";
     if (saldoToggle) saldoToggle.disabled = true;
-  } else {
+
+    // Retención IIBB sí aplica a Transacciones
+    if (iibbToggleCard) iibbToggleCard.classList.remove("disabled");
+    if (iibbMovNotice) iibbMovNotice.style.display = "none";
+    if (iibbToggle) iibbToggle.disabled = false;
+    if (alicuotaWrap) alicuotaWrap.style.display = (iibbToggle && iibbToggle.checked) ? "flex" : "none";
+  } else if (mode === "movimientos") {
+    // Saldo sí aplica a Movimientos
     if (saldoToggleCard) saldoToggleCard.classList.remove("disabled");
     if (saldoTxNotice) saldoTxNotice.style.display = "none";
     if (saldoToggle) saldoToggle.disabled = false;
+
+    // Retención IIBB no aplica a Movimientos
+    if (iibbToggleCard) iibbToggleCard.classList.add("disabled");
+    if (iibbMovNotice) iibbMovNotice.style.display = "inline-flex";
+    if (iibbToggle) iibbToggle.disabled = true;
+    if (alicuotaWrap) alicuotaWrap.style.display = "none";
+  } else {
+    // Modo automático: ambos toggles habilitados
+    if (saldoToggleCard) saldoToggleCard.classList.remove("disabled");
+    if (saldoTxNotice) saldoTxNotice.style.display = "none";
+    if (saldoToggle) saldoToggle.disabled = false;
+
+    if (iibbToggleCard) iibbToggleCard.classList.remove("disabled");
+    if (iibbMovNotice) iibbMovNotice.style.display = "none";
+    if (iibbToggle) iibbToggle.disabled = false;
+    if (alicuotaWrap) alicuotaWrap.style.display = (iibbToggle && iibbToggle.checked) ? "flex" : "none";
   }
 }
 
@@ -307,6 +336,9 @@ function reset() {
   fileInput.value = "";
   successMeta.innerHTML = "";
   if (saldoToggle) saldoToggle.checked = false;
+  if (iibbToggle) iibbToggle.checked = false;
+  if (alicuotaWrap) alicuotaWrap.style.display = "none";
+  if (alicuotaSelect) alicuotaSelect.value = "0.0350";
   setReportMode(selectedReportMode);
   showState("idle");
 }
@@ -640,7 +672,10 @@ function fixCellFormats(worksheet) {
       name.includes("documento") ||
       name.includes("tarjeta habiente") ||
       name.includes("tarjetahabiente") ||
-      name.includes("dni")
+      name.includes("dni") ||
+      name === "cuotas" ||
+      name === "cuota" ||
+      name.includes("cuota")
     ) {
       integerCols.push(c);
     }
@@ -676,7 +711,7 @@ function fixCellFormats(worksheet) {
       cell.z = "$#,##0.00";
     }
 
-    // Formatear columnas de documento / enteros (Número entero sin decimales)
+    // Formatear columnas de documento / cuotas / enteros (Número entero sin decimales)
     for (const c of integerCols) {
       const addr = XLSX.utils.encode_cell({ r, c });
       const cell = worksheet[addr];
@@ -692,6 +727,12 @@ function fixCellFormats(worksheet) {
           }
         }
       } else if (typeof cell.v === "number") {
+        cell.t = "n";
+      } else if (cell.v instanceof Date) {
+        // En caso de que SheetJS lo haya interpretado como Date debido al formato de fecha del archivo original
+        const utcMs = cell.v.getTime();
+        const serial = Math.round((utcMs / 86400000) + 25569);
+        cell.v = serial;
         cell.t = "n";
       }
 
@@ -872,6 +913,233 @@ function appendSaldoColumn(worksheet) {
 
   range.e.c = saldoCol;
   worksheet["!ref"] = XLSX.utils.encode_range(range);
+}
+
+/**
+ * Convierte un número serial de fecha de Excel a un objeto Date en hora local.
+ * Considera el desfase de 1899-12-30 y el año bisiesto ficticio de 1900 en Excel.
+ */
+function excelSerialToLocalDate(serial) {
+  const wholeDays = Math.floor(serial);
+  const frac = serial - wholeDays;
+  const utcMs = (wholeDays - 25569) * 86400 * 1000;
+  const temp = new Date(utcMs);
+  const yr = temp.getUTCFullYear();
+  const mo = temp.getUTCMonth();
+  const da = temp.getUTCDate();
+  const totalSeconds = Math.round(frac * 86400);
+  const hr = Math.floor(totalSeconds / 3600);
+  const mi = Math.floor((totalSeconds % 3600) / 60);
+  const se = totalSeconds % 60;
+  return new Date(yr, mo, da, hr, mi, se);
+}
+
+/**
+ * Parsea el valor de una celda a Date para comparaciones de fecha de acreditación.
+ */
+function parseAccreditationDate(v) {
+  if (v === undefined || v === null || v === "") return null;
+  if (v instanceof Date) return isNaN(v.getTime()) ? null : v;
+  if (typeof v === "number" || (!isNaN(v) && !isNaN(parseFloat(v)) && /^\d+(\.\d+)?$/.test(String(v).trim()))) {
+    const num = typeof v === "number" ? v : parseFloat(v);
+    if (num > 10000) {
+      return excelSerialToLocalDate(num);
+    }
+  }
+  if (typeof v === "string") {
+    const s = v.trim();
+    const dmy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+    if (dmy) {
+      let yr = parseInt(dmy[3], 10);
+      if (yr < 100) yr += 2000;
+      const d = new Date(yr, parseInt(dmy[2], 10) - 1, parseInt(dmy[1], 10), parseInt(dmy[4] || 0, 10), parseInt(dmy[5] || 0, 10), parseInt(dmy[6] || 0, 10));
+      return isNaN(d.getTime()) ? null : d;
+    }
+    const ymd = s.match(/^(\d{2,4})[\/\-](\d{1,2})[\/\-](\d{1,2})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+    if (ymd) {
+      let yr = parseInt(ymd[1], 10);
+      if (yr < 100) yr += 2000;
+      const d = new Date(yr, parseInt(ymd[2], 10) - 1, parseInt(ymd[3], 10), parseInt(ymd[4] || 0, 10), parseInt(ymd[5] || 0, 10), parseInt(ymd[6] || 0, 10));
+      return isNaN(d.getTime()) ? null : d;
+    }
+    const t = Date.parse(s);
+    if (!isNaN(t)) return new Date(t);
+  }
+  return null;
+}
+
+/**
+ * Calcula la Retención IIBB Convenio sobre Monto Bruto para transacciones acreditadas (Fecha Liberación <= hoy)
+ * y descuenta dicho importe de la columna Monto Neto.
+ * Para ventas con acreditación futura (o pendientes no vencidas), la celda queda vacía y no descuenta.
+ */
+function calculateRetencionIIBB(worksheet, alicuotaRate) {
+  if (!worksheet || !worksheet["!ref"]) return { calculatedCount: 0, pendingCount: 0 };
+  const range = XLSX.utils.decode_range(worksheet["!ref"]);
+  const headerRow = range.s.r;
+
+  // 1. Identificar columnas clave
+  let brutoCol = -1;
+  let iibbCol  = -1;
+  let netoCol  = -1;
+  let dateCol  = -1;
+
+  for (let c = range.s.c; c <= range.e.c; c++) {
+    const addr = XLSX.utils.encode_cell({ r: headerRow, c });
+    const cell = worksheet[addr];
+    if (!cell || cell.v === undefined) continue;
+    const name = normalizeString(cell.v);
+
+    if (brutoCol === -1 && (name === "monto bruto" || (name.includes("monto") && name.includes("bruto")))) {
+      brutoCol = c;
+    }
+    if (iibbCol === -1 && (
+      name === "retencion iibb" ||
+      name === "retencion iibb convenio" ||
+      (name.includes("retencion") && name.includes("iibb") && !name.includes("penalidad") && !name.includes("descripcion"))
+    )) {
+      iibbCol = c;
+    }
+    if (netoCol === -1 && (name === "monto neto" || (name.includes("neto") && !name.includes("bruto")))) {
+      netoCol = c;
+    }
+    if (dateCol === -1 && (
+      name === "fecha liberacion" ||
+      name === "fecha de liberacion" ||
+      (name.includes("fecha") && name.includes("liberacion"))
+    )) {
+      dateCol = c;
+    }
+  }
+
+  // Si no se encontró columna de Fecha Liberación por nombre exacto, buscar alguna columna con "liberacion" o "acreditacion"
+  if (dateCol === -1) {
+    for (let c = range.s.c; c <= range.e.c; c++) {
+      const addr = XLSX.utils.encode_cell({ r: headerRow, c });
+      const cell = worksheet[addr];
+      if (!cell || cell.v === undefined) continue;
+      const name = normalizeString(cell.v);
+      if ((name.includes("fecha") || name.includes("plazo")) && (name.includes("liberacion") || name.includes("acreditacion"))) {
+        dateCol = c;
+        break;
+      }
+    }
+  }
+
+  // Si no se encontró columna de Retención IIBB en el archivo, crear una nueva columna al final
+  if (iibbCol === -1) {
+    iibbCol = range.e.c + 1;
+    range.e.c = iibbCol;
+    const headerAddr = XLSX.utils.encode_cell({ r: headerRow, c: iibbCol });
+    worksheet[headerAddr] = { t: "s", v: "Retencion IIBB", w: "Retencion IIBB" };
+    worksheet["!ref"] = XLSX.utils.encode_range(range);
+  }
+
+  if (brutoCol === -1 || netoCol === -1) {
+    console.warn("[ReportePro] No se encontraron columnas de Monto Bruto o Monto Neto para calcular Retención IIBB.");
+    return { calculatedCount: 0, pendingCount: 0 };
+  }
+
+  const now = new Date();
+  const todayCutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
+  let calculatedCount = 0;
+  let pendingCount = 0;
+
+  for (let r = headerRow + 1; r <= range.e.r; r++) {
+    const brutoAddr = XLSX.utils.encode_cell({ r, c: brutoCol });
+    const netoAddr  = XLSX.utils.encode_cell({ r, c: netoCol });
+    const iibbAddr  = XLSX.utils.encode_cell({ r, c: iibbCol });
+
+    const brutoCell = worksheet[brutoAddr];
+    const netoCell  = worksheet[netoAddr];
+    const iibbCell  = worksheet[iibbAddr];
+
+    // Obtener Monto Bruto
+    let montoBruto = 0;
+    if (brutoCell && brutoCell.v !== undefined && brutoCell.v !== null) {
+      if (typeof brutoCell.v === "number") {
+        montoBruto = isNaN(brutoCell.v) ? 0 : brutoCell.v;
+      } else {
+        const cleaned = String(brutoCell.v).replace(/[$\s]/g, "").replace(",", ".");
+        const p = parseFloat(cleaned);
+        if (!isNaN(p)) montoBruto = p;
+      }
+    }
+
+    // Obtener Monto Neto actual
+    let montoNeto = 0;
+    if (netoCell && netoCell.v !== undefined && netoCell.v !== null) {
+      if (typeof netoCell.v === "number") {
+        montoNeto = isNaN(netoCell.v) ? 0 : netoCell.v;
+      } else {
+        const cleaned = String(netoCell.v).replace(/[$\s]/g, "").replace(",", ".");
+        const p = parseFloat(cleaned);
+        if (!isNaN(p)) montoNeto = p;
+      }
+    }
+
+    // Obtener cualquier valor previo de retención existente en la fila
+    let prevRetencion = 0;
+    if (iibbCell && iibbCell.v !== undefined && iibbCell.v !== null && iibbCell.v !== "") {
+      if (typeof iibbCell.v === "number") {
+        prevRetencion = isNaN(iibbCell.v) ? 0 : iibbCell.v;
+      } else {
+        const cleaned = String(iibbCell.v).replace(/[$\s]/g, "").replace(",", ".");
+        const p = parseFloat(cleaned);
+        if (!isNaN(p)) prevRetencion = p;
+      }
+    }
+
+    // Verificar fecha de acreditación (Fecha Liberación <= hoy)
+    let isAcreditada = true;
+    if (dateCol !== -1) {
+      const dateAddr = XLSX.utils.encode_cell({ r, c: dateCol });
+      const dateCell = worksheet[dateAddr];
+      const parsedD = dateCell ? parseAccreditationDate(dateCell.v) : null;
+      if (parsedD) {
+        isAcreditada = (parsedD.getTime() <= todayCutoff.getTime());
+      } else {
+        isAcreditada = false;
+      }
+    }
+
+    if (isAcreditada) {
+      const retencion = Math.round(montoBruto * alicuotaRate * 100) / 100;
+      const nuevoNeto = Math.round((montoNeto + prevRetencion - retencion) * 100) / 100;
+
+      worksheet[iibbAddr] = {
+        t: "n",
+        v: retencion,
+        z: "$#,##0.00",
+      };
+
+      worksheet[netoAddr] = {
+        t: "n",
+        v: nuevoNeto,
+        z: "$#,##0.00",
+      };
+
+      calculatedCount++;
+    } else {
+      // Venta pendiente de acreditación o futura: debe quedar vacía y no descontar del neto
+      const nuevoNeto = Math.round((montoNeto + prevRetencion) * 100) / 100;
+      worksheet[netoAddr] = {
+        t: "n",
+        v: nuevoNeto,
+        z: "$#,##0.00",
+      };
+
+      worksheet[iibbAddr] = {
+        t: "s",
+        v: "",
+      };
+
+      pendingCount++;
+    }
+  }
+
+  return { calculatedCount, pendingCount };
 }
 
 /**
@@ -1154,6 +1422,13 @@ async function processFile(file) {
     }
     const isTransacciones = (resolvedReportType === "transacciones");
 
+    // Opciones del cálculo de Retención IIBB (solo Transacciones)
+    const shouldCalculateIIBB = isTransacciones && (iibbToggle ? iibbToggle.checked : false);
+    const selectedAlicuota    = alicuotaSelect ? parseFloat(alicuotaSelect.value) : 0.0350;
+    const alicuotaRate        = isNaN(selectedAlicuota) ? 0.0350 : selectedAlicuota;
+    let totalIIBBCalculated   = 0;
+    let totalIIBBPending      = 0;
+
     // PASO 2: Aplicación de reglas y transformaciones
     await advanceStep(1, "Aplicando traducciones y reglas...", 700);
     let totalTranslations = 0;
@@ -1179,6 +1454,13 @@ async function processFile(file) {
       // Regla B: Renombrado de columnas
       const { renameCount } = applyColumnRenames(ws);
       totalRenames += renameCount;
+
+      // Cálculo de Retención IIBB Convenio (solo Transacciones si el switch está activo)
+      if (shouldCalculateIIBB) {
+        const { calculatedCount, pendingCount } = calculateRetencionIIBB(ws, alicuotaRate);
+        totalIIBBCalculated += calculatedCount;
+        totalIIBBPending += pendingCount;
+      }
 
       // Regla C: Eliminación de columnas según tipo de reporte
       const { deletedCount } = deleteColumns(ws, resolvedReportType);
@@ -1264,6 +1546,10 @@ async function processFile(file) {
         <span class="success-meta-label">Columna Saldo:</span>
         <span>${isTransacciones ? "Omitida (no aplica a Transacciones)" : ((saldoToggle && saldoToggle.checked) ? "Calculada e incorporada" : "No solicitada")}</span>
       </div>
+      <div class="success-meta-row">
+        <span class="success-meta-label">Retención IIBB:</span>
+        <span>${!isTransacciones ? "Omitida (no aplica a Movimientos)" : (shouldCalculateIIBB ? `Calculada al ${(alicuotaRate * 100).toFixed(2).replace('.', ',')}% (${totalIIBBCalculated} venta(s) acreditada(s)${totalIIBBPending > 0 ? `, ${totalIIBBPending} pendiente(s)` : ""})` : "No solicitada")}</span>
+      </div>
     `;
 
     await new Promise(r => setTimeout(r, 300));
@@ -1278,51 +1564,29 @@ async function processFile(file) {
 }
 
 /**
- * Dispara la descarga del archivo generado utilizando la API nativa de guardado
- * o fallback a Blob URL.
+ * Dispara la descarga directa del archivo generado hacia la carpeta predeterminada
+ * del navegador (Descargas / Downloads).
  */
-async function downloadFile() {
+function downloadFile() {
   if (!processedWorkbook) return;
 
-  const wbArray = XLSX.write(processedWorkbook, {
-    bookType: "xlsx",
-    type: "array",
-    cellStyles: true,
-  });
-  const blob = new Blob([wbArray], {
-    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  });
-
-  // Metodo 1: File System Access API ("Guardar como" nativo)
-  if (typeof window.showSaveFilePicker === "function") {
-    try {
-      const handle = await window.showSaveFilePicker({
-        suggestedName: downloadFileName,
-        types: [{
-          description: "Archivo Excel",
-          accept: {
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"],
-          },
-        }],
-      });
-      const writable = await handle.createWritable();
-      await writable.write(blob);
-      await writable.close();
-      return;
-    } catch (err) {
-      if (err.name === "AbortError") return;
-      console.warn("[ReportePro] showSaveFilePicker fallo, usando fallback:", err);
-    }
-  }
-
-  // Metodo 2: msSaveOrOpenBlob
-  if (typeof navigator.msSaveOrOpenBlob === "function") {
-    navigator.msSaveOrOpenBlob(blob, downloadFileName);
-    return;
-  }
-
-  // Metodo 3: Blob URL
   try {
+    const wbArray = XLSX.write(processedWorkbook, {
+      bookType: "xlsx",
+      type: "array",
+      cellStyles: true,
+    });
+    const blob = new Blob([wbArray], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+
+    // Soporte para navegadores heredados
+    if (typeof navigator.msSaveOrOpenBlob === "function") {
+      navigator.msSaveOrOpenBlob(blob, downloadFileName);
+      return;
+    }
+
+    // Descarga directa e inmediata a través de elemento <a> con atributo download
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -1330,13 +1594,14 @@ async function downloadFile() {
     a.style.display = "none";
     document.body.appendChild(a);
     a.click();
+
     setTimeout(() => {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     }, 2000);
   } catch (err) {
-    console.error("[ReportePro] Todos los metodos de descarga fallaron:", err);
-    alert("No se pudo descargar el archivo automaticamente.\nError: " + err.message);
+    console.error("[ReportePro] Error al descargar el archivo:", err);
+    alert("No se pudo descargar el archivo automáticamente.\nError: " + err.message);
   }
 }
 
@@ -1415,6 +1680,15 @@ dropzone.addEventListener("keydown", (e) => {
 fileInput.addEventListener("change", () => {
   if (fileInput.files[0]) handleFile(fileInput.files[0]);
 });
+
+/* --- Evento del Switch Retención IIBB --- */
+if (iibbToggle) {
+  iibbToggle.addEventListener("change", () => {
+    if (alicuotaWrap) {
+      alicuotaWrap.style.display = iibbToggle.checked ? "flex" : "none";
+    }
+  });
+}
 
 /* --- Botones de Descarga y Reinicio --- */
 downloadBtn.addEventListener("click", downloadFile);

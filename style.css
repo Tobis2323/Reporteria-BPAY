@@ -361,6 +361,46 @@ body {
   margin-top: 2px;
 }
 
+/* --- SELECTOR DE ALICUOTA (RETENCION IIBB) --- */
+.alicuota-selector-wrap {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(0, 0, 0, 0.08);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  animation: fadeIn 0.2s ease-in-out;
+}
+
+.alicuota-label {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--color-text);
+  white-space: nowrap;
+}
+
+.alicuota-select {
+  flex: 1;
+  max-width: 260px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-family: inherit;
+  font-weight: 600;
+  color: var(--color-text);
+  background-color: #ffffff;
+  border: 1.5px solid rgba(197, 20, 167, 0.3);
+  border-radius: var(--radius-sm);
+  outline: none;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.alicuota-select:hover,
+.alicuota-select:focus {
+  border-color: var(--grad-start);
+  box-shadow: 0 0 0 3px rgba(197, 20, 167, 0.12);
+}
+
 /* --- DROPZONE --- */
 .dropzone {
   width: 100%; max-width: 580px;
@@ -655,7 +695,8 @@ body {
   letter-spacing: 0.04em;
 }
 
-.badge--tx-notice {
+.badge--tx-notice,
+.badge--mov-notice {
   background: #fef3c7;
   color: #92400e;
   border: 1px solid #fde68a;
