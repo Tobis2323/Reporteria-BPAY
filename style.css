@@ -213,66 +213,6 @@ body {
   flex-direction: column;
 }
 
-/* --- SELECTOR DE TIPO DE REPORTE --- */
-.report-type-bar {
-  width: 100%;
-  max-width: 580px;
-  margin-bottom: 14px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: #ffffff;
-  border-radius: var(--radius-md);
-  padding: 6px 12px;
-  border: 1px solid rgba(0, 0, 0, 0.06);
-  box-sizing: border-box;
-}
-.report-type-bar__label {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--color-text-2);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  padding-left: 6px;
-}
-.report-type-options {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  background: var(--color-bg);
-  padding: 4px;
-  border-radius: var(--radius-pill);
-}
-.type-btn {
-  border: none;
-  background: transparent;
-  padding: 6px 14px;
-  border-radius: var(--radius-pill);
-  font-family: var(--font-sans);
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--color-text-2);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  transition: all 0.2s ease;
-  user-select: none;
-}
-.type-btn:hover:not(.active) {
-  color: var(--color-text);
-  background: rgba(0, 0, 0, 0.04);
-}
-.type-btn.active {
-  background: var(--gradient);
-  color: #ffffff;
-  box-shadow: 0 2px 6px rgba(197, 20, 167, 0.22);
-}
-.type-btn__icon {
-  font-size: 13px;
-  line-height: 1;
-}
-
 /* --- TOGGLE CONTROL (COLUMNA SALDO) --- */
 .toggle-card {
   width: 100%;

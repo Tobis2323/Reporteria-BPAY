@@ -250,9 +250,6 @@ const botHint             = document.getElementById("botHint");
 const sisBtnSirtac        = document.getElementById("sisBtnSirtac");
 const sisBtnSircreb       = document.getElementById("sisBtnSircreb");
 const sisBtnSircupa       = document.getElementById("sisBtnSircupa");
-const typeBtnAuto         = document.getElementById("typeBtnAuto");
-const typeBtnMov          = document.getElementById("typeBtnMov");
-const typeBtnTx           = document.getElementById("typeBtnTx");
 const downloadBtn         = document.getElementById("downloadBtn");
 const resetBtn            = document.getElementById("resetBtn");
 const errorResetBtn       = document.getElementById("errorResetBtn");
@@ -304,55 +301,22 @@ async function advanceStep(stepIndex, label, delayMs) {
 }
 
 /**
- * Actualiza el modo seleccionado en la interfaz (auto, movimientos, transacciones)
- * y ajusta la disponibilidad visual del toggle de saldo.
+ * Configura los controles para detección 100% automática del tipo de reporte.
  */
-function setReportMode(mode) {
-  selectedReportMode = mode;
-  [typeBtnAuto, typeBtnMov, typeBtnTx].forEach(btn => {
-    if (!btn) return;
-    const isActive = btn.dataset.type === mode;
-    btn.classList.toggle("active", isActive);
-    btn.setAttribute("aria-checked", isActive ? "true" : "false");
-  });
+function setReportMode(mode = "auto") {
+  selectedReportMode = "auto";
+  if (saldoToggleCard) saldoToggleCard.classList.remove("disabled");
+  if (saldoTxNotice) saldoTxNotice.style.display = "none";
+  if (saldoToggle) saldoToggle.disabled = false;
 
-  if (mode === "transacciones") {
-    // Saldo no aplica a Transacciones
-    if (saldoToggleCard) saldoToggleCard.classList.add("disabled");
-    if (saldoTxNotice) saldoTxNotice.style.display = "inline-flex";
-    if (saldoToggle) saldoToggle.disabled = true;
-
-    // Retención IIBB sí aplica a Transacciones
-    if (iibbToggleCard) iibbToggleCard.classList.remove("disabled");
-    if (iibbMovNotice) iibbMovNotice.style.display = "none";
-    if (iibbToggle) iibbToggle.disabled = false;
-    if (alicuotaWrap) alicuotaWrap.style.display = (iibbToggle && iibbToggle.checked) ? "flex" : "none";
-  } else if (mode === "movimientos") {
-    // Saldo sí aplica a Movimientos
-    if (saldoToggleCard) saldoToggleCard.classList.remove("disabled");
-    if (saldoTxNotice) saldoTxNotice.style.display = "none";
-    if (saldoToggle) saldoToggle.disabled = false;
-
-    // Retención IIBB no aplica a Movimientos
-    if (iibbToggleCard) iibbToggleCard.classList.add("disabled");
-    if (iibbMovNotice) iibbMovNotice.style.display = "inline-flex";
-    if (iibbToggle) iibbToggle.disabled = true;
-    if (alicuotaWrap) alicuotaWrap.style.display = "none";
-  } else {
-    // Modo automático: ambos toggles habilitados
-    if (saldoToggleCard) saldoToggleCard.classList.remove("disabled");
-    if (saldoTxNotice) saldoTxNotice.style.display = "none";
-    if (saldoToggle) saldoToggle.disabled = false;
-
-    if (iibbToggleCard) iibbToggleCard.classList.remove("disabled");
-    if (iibbMovNotice) iibbMovNotice.style.display = "none";
-    if (iibbToggle) iibbToggle.disabled = false;
-    if (alicuotaWrap) alicuotaWrap.style.display = (iibbToggle && iibbToggle.checked) ? "flex" : "none";
-  }
+  if (iibbToggleCard) iibbToggleCard.classList.remove("disabled");
+  if (iibbMovNotice) iibbMovNotice.style.display = "none";
+  if (iibbToggle) iibbToggle.disabled = false;
+  if (alicuotaWrap) alicuotaWrap.style.display = (iibbToggle && iibbToggle.checked) ? "flex" : "none";
 }
 
 /**
- * Reinicia la aplicación al estado inicial manteniendo el modo seleccionado.
+ * Reinicia la aplicación al estado inicial.
  */
 function reset() {
   processedWorkbook = null;
@@ -364,7 +328,7 @@ function reset() {
   if (alicuotaSelect) alicuotaSelect.value = "0.0350";
   setIibbMethod("auto");
   setSistema("sirtac");
-  setReportMode(selectedReportMode);
+  setReportMode("auto");
   showState("idle");
 }
 
@@ -1675,12 +1639,9 @@ async function processFile(file) {
       cellStyles: true,
     });
 
-    // Determinar tipo de reporte activo (según selector o detección automática)
-    let resolvedReportType = selectedReportMode;
-    if (resolvedReportType === "auto") {
-      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-      resolvedReportType = detectReportType(firstSheet);
-    }
+    // Determinar tipo de reporte automáticamente a partir del contenido
+    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+    const resolvedReportType = detectReportType(firstSheet);
     const isTransacciones = (resolvedReportType === "transacciones");
 
     // Opciones del cálculo de Retención IIBB (solo Transacciones)
@@ -2091,11 +2052,6 @@ if (btnIibbModeManual) btnIibbModeManual.addEventListener("click", () => setIibb
 downloadBtn.addEventListener("click", downloadFile);
 resetBtn.addEventListener("click", reset);
 errorResetBtn.addEventListener("click", reset);
-
-/* --- Botones de Selección de Modo --- */
-if (typeBtnAuto) typeBtnAuto.addEventListener("click", () => setReportMode("auto"));
-if (typeBtnMov)  typeBtnMov.addEventListener("click", () => setReportMode("movimientos"));
-if (typeBtnTx)   typeBtnTx.addEventListener("click", () => setReportMode("transacciones"));
 
 /* --- Clic en Marca/Logo para reiniciar --- */
 if (headerBrand) {

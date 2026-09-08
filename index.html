@@ -48,22 +48,6 @@
 
           <!-- STATE: IDLE -->
           <div class="state state--idle" id="stateIdle" role="region" aria-label="Zona de carga de archivo">
-            
-            <!-- SELECTOR TIPO DE REPORTE -->
-            <div class="report-type-bar" role="radiogroup" aria-label="Tipo de reporte a procesar">
-              <span class="report-type-bar__label">Modo:</span>
-              <div class="report-type-options">
-                <button type="button" class="type-btn active" data-type="auto" id="typeBtnAuto" role="radio" aria-checked="true">
-                  <span class="type-btn__text">Automático</span>
-                </button>
-                <button type="button" class="type-btn" data-type="movimientos" id="typeBtnMov" role="radio" aria-checked="false">
-                  <span class="type-btn__text">Movimientos</span>
-                </button>
-                <button type="button" class="type-btn" data-type="transacciones" id="typeBtnTx" role="radio" aria-checked="false">
-                  <span class="type-btn__text">Transacciones</span>
-                </button>
-              </div>
-            </div>
 
             <!-- TOGGLE SALDO (opcional, previo a arrastrar archivo) -->
             <div class="toggle-card" id="saldoToggleCard">
@@ -335,7 +319,7 @@
           <div class="info-card">
             <div class="info-card__header">
               <div class="info-card__icon-wrap" aria-hidden="true">
-                <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="3" y="3" width="14" height="3" rx="1" fill="#FFFFFF" opacity="0.35"/><rect x="3" y="3" width="14" height="3" rx="1" stroke="#FFFFFF" stroke-width="1.5"/><path d="M3 9H17M3 14H17" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round"/></svg>
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M4 10H16M4 6H16M4 14H10" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/></svg>
               </div>
               <h3 class="info-card__title">Regla B - Columnas</h3>
             </div>
@@ -350,7 +334,7 @@
           <div class="info-card">
             <div class="info-card__header">
               <div class="info-card__icon-wrap" aria-hidden="true">
-                <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M5 10H15M10 5L15 10L10 15" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M4 10H16M4 6H16M4 14H10" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/></svg>
               </div>
               <h3 class="info-card__title">Regla C - Columnas eliminadas</h3>
             </div>
