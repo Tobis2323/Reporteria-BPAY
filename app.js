@@ -218,6 +218,11 @@ let BOT_API_BASE     = (window.location.hostname === "localhost" || window.locat
   ? LOCAL_BOT_URL
   : (window.SIRCREB_BOT_URL || RENDER_BOT_URL);
 
+// Base de datos de alícuotas centralizada en Google Sheets
+const GOOGLE_SHEETS_ID     = window.GOOGLE_SHEETS_ID || "1_Scfvop57BcCcVaFbe_-ARYPvtrQzvU0bPtcwmLkj2E";
+const GOOGLE_SHEETS_DB_URL = window.GOOGLE_SHEETS_DB_URL || "https://script.google.com/macros/s/AKfycbzNCH9FQlW-HPJ5W0Do91z1RBjrHvrPk-lUqpx50eCEIhFWUxH0lSWZyHQ7oixX4Wi5/exec";
+
+
 
 
 /* =====================================================
@@ -1121,6 +1126,190 @@ async function fetchBotAlicuotas(sistema, cuit, periods) {
   return await res.json();
 }
 
+const MESES_MAP = {
+  "enero": "01", "ene": "01",
+  "febrero": "02", "feb": "02",
+  "marzo": "03", "mar": "03",
+  "abril": "04", "abr": "04",
+  "mayo": "05", "may": "05",
+  "junio": "06", "jun": "06",
+  "julio": "07", "jul": "07",
+  "agosto": "08", "ago": "08",
+  "septiembre": "09", "setiembre": "09", "sep": "09", "set": "09",
+  "octubre": "10", "oct": "10",
+  "noviembre": "11", "nov": "11",
+  "diciembre": "12", "dic": "12"
+};
+
+function normalizePeriodoKey(val) {
+  if (!val) return "";
+  const str = String(val).trim();
+
+  // Si viene como Date(2026,7,1) desde Google Visualization
+  const matchDate = str.match(/Date\((\d{4}),\s*(\d+),\s*(\d+)\)/);
+  if (matchDate) {
+    const y = matchDate[1];
+    const m = String(parseInt(matchDate[2], 10) + 1).padStart(2, "0");
+    return `${y}-${m}`;
+  }
+
+  // Si viene como YYYY-MM o YYYY/MM
+  const matchIso = str.match(/^(\d{4})[-\/](\d{1,2})$/);
+  if (matchIso) return `${matchIso[1]}-${matchIso[2].padStart(2, "0")}`;
+
+  // Si viene como MM/YYYY o MM-YYYY
+  const matchInv = str.match(/^(\d{1,2})[-\/](\d{4})$/);
+  if (matchInv) return `${matchInv[2]}-${matchInv[1].padStart(2, "0")}`;
+
+  // Si viene como texto en español "agosto 2026"
+  const lower = str.toLowerCase();
+  for (const [nombre, num] of Object.entries(MESES_MAP)) {
+    if (lower.includes(nombre)) {
+      const ym = lower.match(/\b(20\d\d)\b/);
+      if (ym) return `${ym[1]}-${num}`;
+    }
+  }
+
+  return str;
+}
+
+/**
+ * Consulta la base de datos de Google Sheets para un CUIT, sistema y lista de períodos.
+ * Utiliza Google Visualization Query API (SQL de Google) para consultar 300.000+ filas en ~1 segundo.
+ */
+async function fetchSheetsAlicuotas(sistema, cuit, periods) {
+  if (!GOOGLE_SHEETS_ID && !GOOGLE_SHEETS_DB_URL) return null;
+  const digits = String(cuit).replace(/\D/g, "");
+  const sisNorm = (sistema || "sirtac").toLowerCase().trim();
+  const periodKeysRequested = periods ? periods.map(p => p.key) : [];
+
+  // 1. Intento ultra-rápido con Google Visualization API (Directo sobre las 300.000 filas)
+  if (GOOGLE_SHEETS_ID) {
+    try {
+      const querySql = `SELECT A, B, C, D, E, F WHERE A = ${digits} OR A = '${digits}' OR A = '${cuit}'`;
+      const gvizUrl = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEETS_ID}/gviz/tq?tqx=out:json&tq=${encodeURIComponent(querySql)}`;
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      const res = await fetch(gvizUrl, { signal: controller.signal });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        const text = await res.text();
+        const match = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]+)\);/);
+        if (match) {
+          const gvizData = JSON.parse(match[1]);
+          if (gvizData.status === "ok" && gvizData.table && gvizData.table.rows && gvizData.table.rows.length > 0) {
+            const periodosFound = {};
+            let razonSocialFound = null;
+
+            for (const r of gvizData.table.rows) {
+              if (!r.c) continue;
+              const rowRazon = r.c[1] ? String(r.c[1].v || "").trim() : "";
+              const rawMes = r.c[2] ? (r.c[2].f || r.c[2].v) : "";
+              const pKey = normalizePeriodoKey(rawMes);
+              const rowLetra = r.c[3] ? String(r.c[3].v || "A").trim() : "A";
+              const rawAli = r.c[4] ? (r.c[4].v !== undefined ? r.c[4].v : r.c[4].f) : 0;
+              const rowSis = r.c[5] ? String(r.c[5].v || "sirtac").toLowerCase().trim() : "sirtac";
+
+              // Filtrar por sistema si coincide
+              if (rowSis === sisNorm) {
+                if (rowRazon && !razonSocialFound) razonSocialFound = rowRazon;
+
+                let numVal = 0;
+                if (rawAli !== undefined && rawAli !== null && rawAli !== "") {
+                  const parsed = parseFloat(String(rawAli).replace("%", "").replace(",", "."));
+                  if (!isNaN(parsed)) numVal = parsed;
+                }
+
+                if (periodKeysRequested.length === 0 || periodKeysRequested.includes(pKey)) {
+                  periodosFound[pKey] = {
+                    status: numVal === 0 ? "not_included" : "ok",
+                    alicuota: numVal,
+                    rate: Math.round((numVal / 100) * 10000) / 10000,
+                    letra: rowLetra,
+                    razonSocial: rowRazon,
+                    origen: "google_sheets"
+                  };
+                }
+              }
+            }
+
+            if (Object.keys(periodosFound).length > 0) {
+              return {
+                success: true,
+                cuit,
+                sistema: sisNorm,
+                razonSocial: razonSocialFound,
+                periodos: periodosFound
+              };
+            }
+          }
+        }
+      }
+    } catch (gvizErr) {
+      console.warn("[Sheets DB] Falló consulta directa GViz, intentando respaldo Apps Script:", gvizErr);
+    }
+  }
+
+  // 2. Respaldo secundario con Apps Script
+  if (GOOGLE_SHEETS_DB_URL) {
+    const periodKeys = periods ? periods.map(p => p.key).join(",") : "";
+    const url = `${GOOGLE_SHEETS_DB_URL}?cuit=${encodeURIComponent(cuit)}&sistema=${encodeURIComponent(sistema)}&periodos=${encodeURIComponent(periodKeys)}`;
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 20000);
+      const res = await fetch(url, { signal: controller.signal, redirect: "follow" });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.success && data.periodos && Object.keys(data.periodos).length > 0) {
+          return data;
+        }
+      }
+    } catch (e) {
+      console.warn("[Sheets DB] Error o timeout en respaldo Apps Script:", e);
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Guarda en segundo plano nuevos registros obtenidos del Bot en Google Sheets (sin demorar al usuario).
+ */
+function saveToSheetsBackground(sistema, cuit, botPeriodos, razonSocial) {
+  if (!GOOGLE_SHEETS_DB_URL || !botPeriodos) return;
+  const registros = [];
+  for (const [periodKey, pData] of Object.entries(botPeriodos)) {
+    if (!pData || pData.status === "error") continue;
+    registros.push({
+      cuit: cuit,
+      razonSocial: pData.razonSocial || razonSocial || "",
+      periodo: periodKey,
+      periodoText: periodKey,
+      letra: pData.letra || "A",
+      alicuota: (pData.alicuota !== undefined && pData.alicuota !== null) ? pData.alicuota : 0,
+      sistema: sistema
+    });
+  }
+
+  if (registros.length === 0) return;
+
+  fetch(GOOGLE_SHEETS_DB_URL, {
+    method: "POST",
+    mode: "no-cors",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify({ registros })
+  }).then(() => {
+    console.log(`[Sheets DB] ${registros.length} registro(s) sincronizado(s) con Google Sheets.`);
+  }).catch(err => {
+    console.warn("[Sheets DB] No se pudo guardar en segundo plano:", err);
+  });
+}
+
 /**
  * Calcula la Retención IIBB Convenio sobre Monto Bruto para transacciones acreditadas (Fecha Liberación <= hoy)
  * y descuenta dicho importe de la columna Monto Neto.
@@ -1271,6 +1460,7 @@ function calculateRetencionIIBB(worksheet, alicuotasMap, manualRate = 0.0350, me
       let statusToRecord = "manual";
       let letraToRecord = null;
       let errorDetail = null;
+      let origenToRecord = null;
 
       if (method === "manual") {
         rateToApply = manualRate;
@@ -1285,6 +1475,7 @@ function calculateRetencionIIBB(worksheet, alicuotasMap, manualRate = 0.0350, me
             alicPct = pData * 100;
             statusToRecord = "ok";
           } else if (typeof pData === "object" && pData !== null) {
+            origenToRecord = pData.origen || null;
             if (pData.status === "ok") {
               rateToApply = pData.rate;
               alicPct = pData.alicuota;
@@ -1326,6 +1517,7 @@ function calculateRetencionIIBB(worksheet, alicuotasMap, manualRate = 0.0350, me
           status: statusToRecord,
           letra: letraToRecord,
           error: errorDetail,
+          origen: origenToRecord,
         };
       }
       periodStats[periodKey].count++;
@@ -1663,7 +1855,7 @@ async function processFile(file) {
       if (cuilValue) break;
     }
 
-    // Consulta al Bot SIRTAC / SIRCREB / SIRCUPA si corresponde
+    // Consulta al Padrón (Google Sheets DB + Bot SIRTAC / SIRCREB / SIRCUPA de respaldo)
     let alicuotasMap = null;
     if (shouldCalculateIIBB && isAutoMethod) {
       if (cuilValue) {
@@ -1676,17 +1868,59 @@ async function processFile(file) {
         const uniquePeriods = Array.from(allPeriodsMap.values());
 
         if (uniquePeriods.length > 0) {
-          await advanceStep(0, `Consultando alícuotas ${selectedSistema.toUpperCase()} para CUIT ${cuilValue}...`, 400);
+          alicuotasMap = {};
+          let fromSheetsCount = 0;
+
+          // 1. Paso rápido: Consultar primero en la base de datos de Google Sheets
+          await advanceStep(0, `Consultando base de datos para CUIT ${cuilValue}...`, 300);
           try {
-            const botResponse = await fetchBotAlicuotas(selectedSistema, cuilValue, uniquePeriods);
-            if (botResponse && botResponse.periodos) {
-              alicuotasMap = botResponse.periodos;
-              botRazonSocial = botResponse.razonSocial || null;
-              botUsed = true;
+            const sheetsResponse = await fetchSheetsAlicuotas(selectedSistema, cuilValue, uniquePeriods);
+            if (sheetsResponse && sheetsResponse.periodos) {
+              for (const p of uniquePeriods) {
+                if (sheetsResponse.periodos[p.key]) {
+                  alicuotasMap[p.key] = sheetsResponse.periodos[p.key];
+                  fromSheetsCount++;
+                }
+              }
+              if (sheetsResponse.razonSocial && !botRazonSocial) {
+                botRazonSocial = sheetsResponse.razonSocial;
+              }
             }
-          } catch (botErr) {
-            console.warn("[ReportePro] Falla en consulta al Bot:", botErr);
-            iibbWarnings.push({ periodKey: "Conexión", error: `No se pudo consultar el padrón (${botErr.message})` });
+          } catch (sheetsErr) {
+            console.warn("[ReportePro] Error al consultar Google Sheets DB:", sheetsErr);
+          }
+
+          // 2. Determinar qué períodos faltan
+          const pendingPeriods = uniquePeriods.filter(p => !alicuotasMap[p.key]);
+
+          if (pendingPeriods.length > 0) {
+            const statusMsg = fromSheetsCount > 0
+              ? `⚡ ${fromSheetsCount} período(s) en BD. Consultando ${pendingPeriods.length} faltante(s) al Bot ${selectedSistema.toUpperCase()}...`
+              : `Consultando alícuotas ${selectedSistema.toUpperCase()} para CUIT ${cuilValue}...`;
+            await advanceStep(0, statusMsg, 400);
+
+            try {
+              const botResponse = await fetchBotAlicuotas(selectedSistema, cuilValue, pendingPeriods);
+              if (botResponse && botResponse.periodos) {
+                for (const [key, val] of Object.entries(botResponse.periodos)) {
+                  alicuotasMap[key] = { ...val, origen: "bot" };
+                }
+                if (botResponse.razonSocial && !botRazonSocial) {
+                  botRazonSocial = botResponse.razonSocial;
+                }
+                botUsed = true;
+
+                // Guardar en Google Sheets en segundo plano sin demorar al usuario
+                saveToSheetsBackground(selectedSistema, cuilValue, botResponse.periodos, botRazonSocial);
+              }
+            } catch (botErr) {
+              console.warn("[ReportePro] Falla en consulta al Bot:", botErr);
+              iibbWarnings.push({ periodKey: "Conexión", error: `No se pudo consultar el padrón (${botErr.message})` });
+            }
+          } else {
+            // Todos los períodos estaban en la base de datos
+            botUsed = true;
+            await advanceStep(0, `⚡ Alícuotas recuperadas de la base de datos (${fromSheetsCount}/${uniquePeriods.length} períodos)`, 300);
           }
         }
       } else {
@@ -1819,9 +2053,16 @@ async function processFile(file) {
                   statusLabel = "0,00% (Error al consultar)";
                 }
 
+                let sourceBadge = "";
+                if (pdata.origen === "google_sheets") {
+                  sourceBadge = ` <span style="font-size: 10px; background: rgba(16, 185, 129, 0.12); color: #059669; border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 4px; padding: 1px 5px; margin-left: 4px; font-weight: 600;" title="Obtenido de la base de datos Google Sheets">⚡ BD</span>`;
+                } else if (pdata.origen === "bot") {
+                  sourceBadge = ` <span style="font-size: 10px; background: rgba(208, 0, 112, 0.10); color: #d00070; border: 1px solid rgba(208, 0, 112, 0.20); border-radius: 4px; padding: 1px 5px; margin-left: 4px; font-weight: 600;" title="Consultado en vivo con el Bot COMARB">🤖 Bot</span>`;
+                }
+
                 return `
                   <div class="period-item">
-                    <span class="period-item__label">Período ${escapeHtml(pkey)}:</span>
+                    <span class="period-item__label">Período ${escapeHtml(pkey)}:${sourceBadge}</span>
                     <span>${pdata.count} venta(s) &nbsp; <span class="period-item__badge ${badgeClass}">${statusLabel}</span></span>
                   </div>
                 `;
