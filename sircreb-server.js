@@ -238,8 +238,9 @@ export async function queryComarbPadron(sistema = 'sirtac', cuit, periodos = [])
     }
 
     // 1. Seleccionar el sistema (SIRTAC, SIRCREB, SIRCUPA)
-    // Los radio buttons ahora usan IDs numéricos: 1=SIRCREB, 2=SIRCUPA, 3=SIRTAC
-    const sistemaIdMap = { sircreb: '#1', sircupa: '#2', sirtac: '#3' };
+    // Los radio buttons usan IDs numéricos: 1=SIRCREB, 2=SIRCUPA, 3=SIRTAC
+    // Nota: #1 #2 #3 no son selectores CSS válidos → usar [id="N"]
+    const sistemaIdMap = { sircreb: '[id="1"]', sircupa: '[id="2"]', sirtac: '[id="3"]' };
     const radioSelector = sistemaIdMap[sisNorm];
     if (!radioSelector) {
       throw new Error(`No se encontró la opción para el sistema ${sisNorm} en la página.`);
