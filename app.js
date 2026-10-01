@@ -1915,7 +1915,16 @@ async function processFile(file) {
               }
             } catch (botErr) {
               console.warn("[ReportePro] Falla en consulta al Bot:", botErr);
-              iibbWarnings.push({ periodKey: "Conexión", error: `No se pudo consultar el padrón (${botErr.message})` });
+              const isBlockError = botErr.message && (
+                botErr.message.includes('bloqueo por IP') ||
+                botErr.message.includes('selectores conocidos') ||
+                botErr.message.includes('Waiting for selector') ||
+                botErr.message.includes('TimeoutError')
+              );
+              const errMsg = isBlockError
+                ? `COARB bloqueó la consulta desde la nube (IP de Render). Activá el Bot local (localhost:3000) para continuar.`
+                : `No se pudo consultar el padrón (${botErr.message})`;
+              iibbWarnings.push({ periodKey: "Conexión", error: errMsg });
             }
           } else {
             // Todos los períodos estaban en la base de datos

@@ -83,6 +83,9 @@ function getCacheKey(sistema, cuitFormatted, anio, mes) {
 let sharedBrowser = null;
 let browserCloseTimeout = null;
 
+// User-Agent de Chrome real para evadir detección de bot
+const STEALTH_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+
 async function getBrowser() {
   if (browserCloseTimeout) {
     clearTimeout(browserCloseTimeout);
@@ -99,8 +102,17 @@ async function getBrowser() {
         '--disable-dev-shm-usage',
         '--disable-gpu',
         '--no-zygote',
-        '--window-size=1280,800',
+        '--window-size=1366,768',
+        // Anti-detección: flags que reducen la huella de automatización
+        '--disable-blink-features=AutomationControlled',
+        '--disable-infobars',
+        '--disable-extensions',
+        '--hide-scrollbars',
+        '--mute-audio',
+        '--disable-web-security',
+        '--lang=es-AR,es',
       ],
+      ignoreDefaultArgs: ['--enable-automation'],
     });
   }
   return sharedBrowser;
@@ -166,6 +178,27 @@ export async function queryComarbPadron(sistema = 'sirtac', cuit, periodos = [])
   const page = await browser.newPage();
 
   try {
+    // --- Anti-detección: sobreescribir fingerprints de automatización ---
+    await page.evaluateOnNewDocument(() => {
+      // Eliminar el flag navigator.webdriver que delata a Puppeteer
+      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+      // Simular plugins reales de Chrome
+      Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+      // Simular idioma argentino
+      Object.defineProperty(navigator, 'language', { get: () => 'es-AR' });
+      Object.defineProperty(navigator, 'languages', { get: () => ['es-AR', 'es'] });
+      // Ocultar que es headless
+      Object.defineProperty(navigator, 'platform', { get: () => 'Win32' });
+    });
+
+    // Usar User-Agent de Chrome real
+    await page.setUserAgent(STEALTH_UA);
+    await page.setExtraHTTPHeaders({
+      'Accept-Language': 'es-AR,es;q=0.9',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    });
+    await page.setViewport({ width: 1366, height: 768 });
+
     // Bloquear imágenes y fuentes pesadas para acelerar carga
     await page.setRequestInterception(true);
     page.on('request', (req) => {
@@ -177,14 +210,32 @@ export async function queryComarbPadron(sistema = 'sirtac', cuit, periodos = [])
       }
     });
 
+    // Navegar y esperar red tranquila (mejor para sitios con Cloudflare)
     await page.goto('https://sircreb.comarb.gob.ar/sircreb/contribuyente/', {
-      waitUntil: 'domcontentloaded',
-      timeout: 30000,
+      waitUntil: 'networkidle2',
+      timeout: 45000,
     });
 
-    // Esperar a que el campo CUIT esté presente e interactivo
-    // Nota: la página actualizada de COARB usa id="cuit" (sin atributo name)
-    await page.waitForSelector('#cuit', { timeout: 20000 });
+    // Esperar el campo CUIT — probamos varios selectores posibles
+    // (la página de COARB cambió su DOM; probamos los más probables en orden)
+    const CUIT_SELECTORS = ['#cuit', 'input[name="cuit"]', 'input[id*="cuit" i]', 'input[placeholder*="CUIT" i]', 'input[type="text"]'];
+    let foundCuitSelector = null;
+    for (const sel of CUIT_SELECTORS) {
+      try {
+        await page.waitForSelector(sel, { timeout: 5000 });
+        foundCuitSelector = sel;
+        console.log(`[SIRCREB Bot] Campo CUIT encontrado con selector: ${sel}`);
+        break;
+      } catch (e) {
+        // Probar siguiente
+      }
+    }
+    if (!foundCuitSelector) {
+      // Volcar el HTML del body para diagnóstico
+      const bodySnippet = await page.evaluate(() => document.body?.innerHTML?.substring(0, 1500) || 'sin body');
+      console.error('[SIRCREB Bot] HTML recibido (primeros 1500 chars):', bodySnippet);
+      throw new Error('No se encontró el campo CUIT en ninguno de los selectores conocidos. Posible bloqueo por IP o cambio en la página de COARB.');
+    }
 
     // 1. Seleccionar el sistema (SIRTAC, SIRCREB, SIRCUPA)
     // Los radio buttons ahora usan IDs numéricos: 1=SIRCREB, 2=SIRCUPA, 3=SIRTAC
@@ -200,8 +251,8 @@ export async function queryComarbPadron(sistema = 'sirtac', cuit, periodos = [])
       throw new Error(`No se encontró el radio button ${radioSelector} para el sistema ${sisNorm}.`);
     }
 
-    // 2. Ingresar CUIT con formato XX-XXXXXXXX-X
-    const cuitInput = await page.$('#cuit');
+    // 2. Ingresar CUIT con formato XX-XXXXXXXX-X (usando el selector que funcionó)
+    const cuitInput = await page.$(foundCuitSelector);
     if (!cuitInput) {
       throw new Error('No se encontró el campo de CUIT en la página.');
     }
