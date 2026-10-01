@@ -183,19 +183,25 @@ export async function queryComarbPadron(sistema = 'sirtac', cuit, periodos = [])
     });
 
     // Esperar a que el campo CUIT esté presente e interactivo
-    await page.waitForSelector('input[name="cuit"]', { timeout: 20000 });
+    // Nota: la página actualizada de COARB usa id="cuit" (sin atributo name)
+    await page.waitForSelector('#cuit', { timeout: 20000 });
 
     // 1. Seleccionar el sistema (SIRTAC, SIRCREB, SIRCUPA)
-    const radioSelector = `input[name="sistema"][value="${sisNorm}"]`;
+    // Los radio buttons ahora usan IDs numéricos: 1=SIRCREB, 2=SIRCUPA, 3=SIRTAC
+    const sistemaIdMap = { sircreb: '#1', sircupa: '#2', sirtac: '#3' };
+    const radioSelector = sistemaIdMap[sisNorm];
+    if (!radioSelector) {
+      throw new Error(`No se encontró la opción para el sistema ${sisNorm} en la página.`);
+    }
     const radio = await page.$(radioSelector);
     if (radio) {
       await radio.click();
     } else {
-      throw new Error(`No se encontró la opción para el sistema ${sisNorm} en la página.`);
+      throw new Error(`No se encontró el radio button ${radioSelector} para el sistema ${sisNorm}.`);
     }
 
     // 2. Ingresar CUIT con formato XX-XXXXXXXX-X
-    const cuitInput = await page.$('input[name="cuit"]');
+    const cuitInput = await page.$('#cuit');
     if (!cuitInput) {
       throw new Error('No se encontró el campo de CUIT en la página.');
     }
@@ -229,19 +235,19 @@ export async function queryComarbPadron(sistema = 'sirtac', cuit, periodos = [])
           await new Promise((r) => setTimeout(r, 150));
         }
 
-        // Seleccionar año y mes
-        await page.select('select[name="anio"]', String(p.anio));
-        await page.select('select[name="mes"]', String(p.mes));
+        // Seleccionar año y mes (la página actualizada usa id="anio" e id="mes")
+        await page.select('#anio', String(p.anio));
+        await page.select('#mes', String(p.mes));
 
         await page.evaluate(() => {
-          document.querySelector('select[name="mes"]')?.dispatchEvent(new Event('change', { bubbles: true }));
-          document.querySelector('select[name="anio"]')?.dispatchEvent(new Event('change', { bubbles: true }));
+          document.querySelector('#mes')?.dispatchEvent(new Event('change', { bubbles: true }));
+          document.querySelector('#anio')?.dispatchEvent(new Event('change', { bubbles: true }));
         });
 
         await new Promise((r) => setTimeout(r, 150));
 
-        // Clic en Consultar
-        const submitBtn = await page.$('button[type="submit"]');
+        // Clic en Consultar (el botón tiene classes "boton btn btn-primary", confirmado en DOM live)
+        const submitBtn = await page.$('button.boton.btn-primary, button.boton');
         if (!submitBtn) {
           throw new Error('No se encontró el botón Consultar');
         }
