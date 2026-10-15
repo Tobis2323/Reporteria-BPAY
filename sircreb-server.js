@@ -555,10 +555,14 @@ const server = http.createServer(async (req, res) => {
   // Configuración de cabeceras CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, ngrok-skip-browser-warning, *');
 
   if (req.method === 'OPTIONS') {
-    res.writeHead(204);
+    res.writeHead(204, {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, ngrok-skip-browser-warning, *',
+    });
     res.end();
     return;
   }
