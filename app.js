@@ -338,9 +338,28 @@ function reset() {
 }
 
 /**
+ * Despierta el Bot y le pide precargar Chrome + la página de COMARB en segundo plano,
+ * para que la consulta posterior no pague el arranque en frío. No bloquea al usuario.
+ */
+function warmBot() {
+  fetch(`${BOT_API_BASE}/api/health?warm=1`, { method: "GET" }).catch(() => {});
+}
+
+/**
+ * Evita superponer chequeos de salud (se ejecutan cada 8 s).
+ */
+let healthCheckInFlight = null;
+function checkBotHealth() {
+  if (!healthCheckInFlight) {
+    healthCheckInFlight = runBotHealthCheck().finally(() => { healthCheckInFlight = null; });
+  }
+  return healthCheckInFlight;
+}
+
+/**
  * Comprueba el estado de conexión con el Bot local o en la nube SIRTAC / SIRCREB / SIRCUPA.
  */
-async function checkBotHealth() {
+async function runBotHealthCheck() {
   const candidateUrls = [];
   if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
     candidateUrls.push(LOCAL_BOT_URL);
@@ -350,7 +369,7 @@ async function checkBotHealth() {
   for (const url of candidateUrls) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3500);
+      const timeoutId = setTimeout(() => controller.abort(), 7000);
       const res = await fetch(`${url}/api/health`, {
         method: "GET",
         signal: controller.signal,
@@ -375,7 +394,7 @@ async function checkBotHealth() {
 
   isBotOnline = false;
   if (botStatusPill) botStatusPill.classList.remove("online");
-  if (botStatusLabel) botStatusLabel.textContent = "Bot Desconectado";
+  if (botStatusLabel) botStatusLabel.textContent = "Bot Desconectado (o iniciando)";
   if (botHint) botHint.style.display = "inline";
   return false;
 }
@@ -1111,19 +1130,46 @@ function extractUniqueAccreditationPeriods(worksheet) {
   return Array.from(periodsMap.values());
 }
 
+const BOT_REQUEST_TIMEOUT_MS = 90000;           // Cubre arranque de Chrome + varios períodos
+const BOT_RETRYABLE_STATUS   = [502, 503, 504]; // Render devuelve estos códigos mientras despierta o redeploya
+
 /**
  * Consulta la API local del Bot para obtener las alícuotas mensuales del CUIT.
+ * Incluye timeout y un reintento ante errores de red o servidor iniciando.
  */
 async function fetchBotAlicuotas(sistema, cuit, periods) {
   const periodKeys = periods.map(p => p.key).join(",");
   const url = `${BOT_API_BASE}/api/alicuotas?sistema=${encodeURIComponent(sistema)}&cuit=${encodeURIComponent(cuit)}&periodos=${encodeURIComponent(periodKeys)}`;
+  const maxAttempts = 2;
 
-  const res = await fetch(url);
-  if (!res.ok) {
-    const errJson = await res.json().catch(() => ({}));
-    throw new Error(errJson.error || `Error HTTP ${res.status}`);
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), BOT_REQUEST_TIMEOUT_MS);
+    try {
+      const res = await fetch(url, { signal: controller.signal });
+      if (!res.ok) {
+        if (BOT_RETRYABLE_STATUS.includes(res.status) && attempt < maxAttempts) {
+          await new Promise(r => setTimeout(r, 3000));
+          continue;
+        }
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || `Error HTTP ${res.status}`);
+      }
+      return await res.json();
+    } catch (err) {
+      if (err.name === "AbortError") {
+        throw new Error(`El Bot no respondió en ${BOT_REQUEST_TIMEOUT_MS / 1000} s. Puede estar iniciando; reintentá en un minuto.`);
+      }
+      // Error de red (servidor despertando / reiniciando): reintentar una vez
+      if (err instanceof TypeError && attempt < maxAttempts) {
+        await new Promise(r => setTimeout(r, 3000));
+        continue;
+      }
+      throw err;
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
-  return await res.json();
 }
 
 const MESES_MAP = {
@@ -1182,6 +1228,7 @@ async function fetchSheetsAlicuotas(sistema, cuit, periods) {
   const digits = String(cuit).replace(/\D/g, "");
   const sisNorm = (sistema || "sirtac").toLowerCase().trim();
   const periodKeysRequested = periods ? periods.map(p => p.key) : [];
+  let gvizAnswered = false; // true si GViz respondió correctamente (aunque sin filas para el CUIT)
 
   // 1. Intento ultra-rápido con Google Visualization API (Directo sobre las 300.000 filas)
   if (GOOGLE_SHEETS_ID) {
@@ -1199,6 +1246,7 @@ async function fetchSheetsAlicuotas(sistema, cuit, periods) {
         const match = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]+)\);/);
         if (match) {
           const gvizData = JSON.parse(match[1]);
+          if (gvizData.status === "ok") gvizAnswered = true;
           if (gvizData.status === "ok" && gvizData.table && gvizData.table.rows && gvizData.table.rows.length > 0) {
             const periodosFound = {};
             let razonSocialFound = null;
@@ -1252,7 +1300,11 @@ async function fetchSheetsAlicuotas(sistema, cuit, periods) {
     }
   }
 
-  // 2. Respaldo secundario con Apps Script
+  // Si GViz respondió bien pero no tenía los datos, Apps Script (que lee la misma hoja) tampoco los tendrá:
+  // se evita esperar hasta 20 s en vano y se pasa directo al Bot.
+  if (gvizAnswered) return null;
+
+  // 2. Respaldo secundario con Apps Script (solo si GViz falló)
   if (GOOGLE_SHEETS_DB_URL) {
     const periodKeys = periods ? periods.map(p => p.key).join(",") : "";
     const url = `${GOOGLE_SHEETS_DB_URL}?cuit=${encodeURIComponent(cuit)}&sistema=${encodeURIComponent(sistema)}&periodos=${encodeURIComponent(periodKeys)}`;
@@ -1871,6 +1923,9 @@ async function processFile(file) {
           alicuotasMap = {};
           let fromSheetsCount = 0;
 
+          // Despertar el Bot y precargar COMARB en paralelo mientras se consulta la base de datos
+          warmBot();
+
           // 1. Paso rápido: Consultar primero en la base de datos de Google Sheets
           await advanceStep(0, `Consultando base de datos para CUIT ${cuilValue}...`, 300);
           try {
@@ -2284,6 +2339,8 @@ if (iibbToggle) {
       alicuotaWrap.style.display = iibbToggle.checked ? "flex" : "none";
       if (iibbToggle.checked) {
         checkBotHealth();
+        // El usuario probablemente va a cargar un archivo: ir despertando el Bot
+        if (selectedIibbMethod === "auto") warmBot();
       }
     }
   });

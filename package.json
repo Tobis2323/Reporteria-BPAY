@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "node sircreb-server.js",
+    "dev": "node sircreb-server.js",
     "bot": "node sircreb-server.js"
   },
   "keywords": [

@@ -80,54 +80,204 @@ function getCacheKey(sistema, cuitFormatted, anio, mes) {
    MOTOR DE CONSULTA AUTOMATIZADA CON PUPPETEER
    ===================================================== */
 
+const COMARB_URL = 'https://sircreb.comarb.gob.ar/sircreb/contribuyente/';
+
+// Tiempos configurables por variables de entorno
+const BROWSER_IDLE_MS         = parseInt(process.env.BROWSER_IDLE_MS || '600000', 10);       // Chrome abierto 10 min tras la última consulta
+const PAGE_LOAD_TIMEOUT_MS    = parseInt(process.env.PAGE_LOAD_TIMEOUT_MS || '45000', 10);   // Carga inicial del sitio de COMARB (sitio estatal con latencia variable)
+const FORM_READY_TIMEOUT_MS   = parseInt(process.env.FORM_READY_TIMEOUT_MS || '15000', 10);  // Render del formulario (SPA React)
+const API_RESPONSE_TIMEOUT_MS = parseInt(process.env.API_RESPONSE_TIMEOUT_MS || '20000', 10); // reCAPTCHA + respuesta de consulta_padron
+
+// Selectores del campo CUIT en orden de prioridad
+// (la página de COARB cambió su DOM; probamos los más probables en orden)
+const CUIT_SELECTORS = ['#cuit', 'input[name="cuit"]', 'input[id*="cuit" i]', 'input[placeholder*="CUIT" i]', 'input[type="text"]'];
+const CUIT_SELECTOR_ANY = CUIT_SELECTORS.join(', ');
+// El botón tiene classes "boton btn btn-primary" (confirmado en DOM live)
+const SUBMIT_SELECTOR = 'button.boton.btn-primary, button.boton';
+
+// En modo CLI no tiene sentido precargar pestañas ni mantener Chrome abierto
+const IS_CLI_MODE = process.argv.includes('--cuit') || process.argv.includes('-c');
+
 let sharedBrowser = null;
+let browserLaunchPromise = null; // Evita lanzar dos Chrome si llegan consultas simultáneas
 let browserCloseTimeout = null;
+let warmPagePromise = null;      // Pestaña precargada en COMARB lista para la próxima consulta
+let activeQueries = 0;           // Consultas en curso (el cierre por inactividad las respeta)
 
 // User-Agent de Chrome real para evadir detección de bot
 const STEALTH_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 
 async function getBrowser() {
+  if (sharedBrowser && sharedBrowser.connected) return sharedBrowser;
+
+  if (!browserLaunchPromise) {
+    const executablePath = getBrowserPath();
+    browserLaunchPromise = puppeteer
+      .launch({
+        executablePath,
+        headless: true,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-gpu',
+          '--no-zygote',
+          '--window-size=1366,768',
+          // Anti-detección: flags que reducen la huella de automatización
+          '--disable-blink-features=AutomationControlled',
+          '--disable-infobars',
+          '--disable-extensions',
+          '--hide-scrollbars',
+          '--mute-audio',
+          '--disable-web-security',
+          '--lang=es-AR,es',
+        ],
+        ignoreDefaultArgs: ['--enable-automation'],
+      })
+      .then((browser) => {
+        sharedBrowser = browser;
+        browser.on('disconnected', () => {
+          if (sharedBrowser === browser) sharedBrowser = null;
+          warmPagePromise = null;
+        });
+        return browser;
+      })
+      .finally(() => {
+        browserLaunchPromise = null;
+      });
+  }
+  return browserLaunchPromise;
+}
+
+function cancelBrowserClose() {
   if (browserCloseTimeout) {
     clearTimeout(browserCloseTimeout);
     browserCloseTimeout = null;
   }
-  if (!sharedBrowser || !sharedBrowser.connected) {
-    const executablePath = getBrowserPath();
-    sharedBrowser = await puppeteer.launch({
-      executablePath,
-      headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--no-zygote',
-        '--window-size=1366,768',
-        // Anti-detección: flags que reducen la huella de automatización
-        '--disable-blink-features=AutomationControlled',
-        '--disable-infobars',
-        '--disable-extensions',
-        '--hide-scrollbars',
-        '--mute-audio',
-        '--disable-web-security',
-        '--lang=es-AR,es',
-      ],
-      ignoreDefaultArgs: ['--enable-automation'],
-    });
-  }
-  return sharedBrowser;
 }
 
+/**
+ * Programa el cierre de Chrome tras BROWSER_IDLE_MS sin consultas.
+ * Nunca cierra el navegador mientras haya consultas en curso.
+ */
 function scheduleBrowserClose() {
-  if (browserCloseTimeout) clearTimeout(browserCloseTimeout);
+  if (IS_CLI_MODE) return;
+  cancelBrowserClose();
+  if (activeQueries > 0) return;
   browserCloseTimeout = setTimeout(async () => {
-    if (sharedBrowser && sharedBrowser.connected) {
+    browserCloseTimeout = null;
+    if (activeQueries > 0) return;
+    const browser = sharedBrowser;
+    sharedBrowser = null;
+    warmPagePromise = null;
+    if (browser) {
       try {
-        await sharedBrowser.close();
+        await browser.close();
       } catch (e) {}
-      sharedBrowser = null;
     }
-  }, 35000); // Mantiene el navegador caliente durante 35s por si llegan más solicitudes
+  }, BROWSER_IDLE_MS);
+}
+
+/**
+ * Aplica anti-detección, cabeceras y bloqueo de recursos pesados a una pestaña.
+ */
+async function setupPage(page) {
+  // --- Anti-detección: sobreescribir fingerprints de automatización ---
+  await page.evaluateOnNewDocument(() => {
+    // Eliminar el flag navigator.webdriver que delata a Puppeteer
+    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+    // Simular plugins reales de Chrome
+    Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+    // Simular idioma argentino
+    Object.defineProperty(navigator, 'language', { get: () => 'es-AR' });
+    Object.defineProperty(navigator, 'languages', { get: () => ['es-AR', 'es'] });
+    // Ocultar que es headless
+    Object.defineProperty(navigator, 'platform', { get: () => 'Win32' });
+  });
+
+  // Usar User-Agent de Chrome real
+  await page.setUserAgent(STEALTH_UA);
+  await page.setExtraHTTPHeaders({
+    'Accept-Language': 'es-AR,es;q=0.9',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+  });
+  await page.setViewport({ width: 1366, height: 768 });
+
+  // Bloquear solo imágenes, fuentes pesadas y medios (sin bloquear hojas de estilo o scripts esenciales)
+  await page.setRequestInterception(true);
+  page.on('request', (req) => {
+    const resource = req.resourceType();
+    if (['image', 'font', 'media'].includes(resource)) {
+      req.abort();
+    } else {
+      req.continue();
+    }
+  });
+}
+
+/**
+ * Abre una pestaña nueva, navega a COMARB y espera a que el formulario esté listo.
+ */
+async function createReadyPage() {
+  const browser = await getBrowser();
+  const page = await browser.newPage();
+  try {
+    await setupPage(page);
+
+    // domcontentloaded es mucho más rápido que networkidle2 (no espera analytics/reCAPTCHA en segundo plano)
+    await page.goto(COMARB_URL, { waitUntil: 'domcontentloaded', timeout: PAGE_LOAD_TIMEOUT_MS });
+
+    // La página es una SPA (React): esperamos a que se renderice CUALQUIERA de los selectores conocidos
+    // en una sola espera (antes se probaban uno por uno con 5s cada uno)
+    try {
+      await page.waitForSelector(CUIT_SELECTOR_ANY, { timeout: FORM_READY_TIMEOUT_MS });
+    } catch (e) {
+      // Volcar el HTML del body para diagnóstico
+      const bodySnippet = await page
+        .evaluate(() => document.body?.innerHTML?.substring(0, 1500) || 'sin body')
+        .catch(() => 'sin body');
+      console.error('[SIRCREB Bot] HTML recibido (primeros 1500 chars):', bodySnippet);
+      throw new Error('No se encontró el campo CUIT en ninguno de los selectores conocidos. Posible bloqueo por IP o cambio en la página de COARB.');
+    }
+    return page;
+  } catch (err) {
+    try { await page.close(); } catch (e) {}
+    throw err;
+  }
+}
+
+/**
+ * Deja una pestaña precargada en COMARB para que la próxima consulta solo complete el formulario.
+ */
+function prewarmPage() {
+  if (IS_CLI_MODE || warmPagePromise) return;
+  const promise = createReadyPage();
+  warmPagePromise = promise;
+  promise.catch((err) => {
+    if (warmPagePromise === promise) warmPagePromise = null;
+    console.warn('[SIRCREB Bot] No se pudo precargar la página de COMARB:', err.message);
+  });
+}
+
+/**
+ * Obtiene una pestaña con el formulario listo: usa la precargada si está disponible, si no crea una.
+ */
+async function acquireReadyPage() {
+  const pending = warmPagePromise;
+  warmPagePromise = null;
+  if (pending) {
+    try {
+      const page = await pending;
+      if (!page.isClosed() && (await page.$(CUIT_SELECTOR_ANY))) {
+        console.log('[SIRCREB Bot] Usando pestaña precargada.');
+        return page;
+      }
+      try { await page.close(); } catch (e) {}
+    } catch (e) {
+      // La precarga falló o el navegador se cerró: se crea una pestaña nueva
+    }
+  }
+  return createReadyPage();
 }
 
 /**
@@ -174,66 +324,23 @@ export async function queryComarbPadron(sistema = 'sirtac', cuit, periodos = [])
     return results;
   }
 
-  const browser = await getBrowser();
-  const page = await browser.newPage();
+  activeQueries++;
+  cancelBrowserClose();
+  let page = null;
 
   try {
-    // --- Anti-detección: sobreescribir fingerprints de automatización ---
-    await page.evaluateOnNewDocument(() => {
-      // Eliminar el flag navigator.webdriver que delata a Puppeteer
-      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-      // Simular plugins reales de Chrome
-      Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
-      // Simular idioma argentino
-      Object.defineProperty(navigator, 'language', { get: () => 'es-AR' });
-      Object.defineProperty(navigator, 'languages', { get: () => ['es-AR', 'es'] });
-      // Ocultar que es headless
-      Object.defineProperty(navigator, 'platform', { get: () => 'Win32' });
-    });
+    // Usar la pestaña precargada (si existe) o abrir una nueva con el formulario listo
+    page = await acquireReadyPage();
 
-    // Usar User-Agent de Chrome real
-    await page.setUserAgent(STEALTH_UA);
-    await page.setExtraHTTPHeaders({
-      'Accept-Language': 'es-AR,es;q=0.9',
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-    });
-    await page.setViewport({ width: 1366, height: 768 });
-
-    // Bloquear imágenes y fuentes pesadas para acelerar carga
-    await page.setRequestInterception(true);
-    page.on('request', (req) => {
-      const resource = req.resourceType();
-      if (['image', 'font', 'media'].includes(resource)) {
-        req.abort();
-      } else {
-        req.continue();
-      }
-    });
-
-    // Navegar y esperar red tranquila (mejor para sitios con Cloudflare)
-    await page.goto('https://sircreb.comarb.gob.ar/sircreb/contribuyente/', {
-      waitUntil: 'networkidle2',
-      timeout: 45000,
-    });
-
-    // Esperar el campo CUIT — probamos varios selectores posibles
-    // (la página de COARB cambió su DOM; probamos los más probables en orden)
-    const CUIT_SELECTORS = ['#cuit', 'input[name="cuit"]', 'input[id*="cuit" i]', 'input[placeholder*="CUIT" i]', 'input[type="text"]'];
+    // El formulario ya está renderizado: elegir el selector de CUIT de mayor prioridad presente
     let foundCuitSelector = null;
     for (const sel of CUIT_SELECTORS) {
-      try {
-        await page.waitForSelector(sel, { timeout: 5000 });
+      if (await page.$(sel)) {
         foundCuitSelector = sel;
-        console.log(`[SIRCREB Bot] Campo CUIT encontrado con selector: ${sel}`);
         break;
-      } catch (e) {
-        // Probar siguiente
       }
     }
     if (!foundCuitSelector) {
-      // Volcar el HTML del body para diagnóstico
-      const bodySnippet = await page.evaluate(() => document.body?.innerHTML?.substring(0, 1500) || 'sin body');
-      console.error('[SIRCREB Bot] HTML recibido (primeros 1500 chars):', bodySnippet);
       throw new Error('No se encontró el campo CUIT en ninguno de los selectores conocidos. Posible bloqueo por IP o cambio en la página de COARB.');
     }
 
@@ -260,64 +367,89 @@ export async function queryComarbPadron(sistema = 'sirtac', cuit, periodos = [])
     await cuitInput.click({ clickCount: 3 });
     await cuitInput.type(cuitFormatted, { delay: 10 });
 
+    /**
+     * Cierra el modal previo si quedó abierto, selecciona el período, hace clic en Consultar
+     * y devuelve el JSON de consulta_padron (o null si no hubo respuesta a tiempo).
+     */
+    const submitPeriod = async (p) => {
+      // 1. Cerrar modal anterior si quedó abierto
+      const closeBtn = await page.$('.btn-close, button.close, .modal-header button, .modal button');
+      if (closeBtn) {
+        try { await closeBtn.click(); } catch (e) {}
+        await new Promise((r) => setTimeout(r, 200));
+      }
+
+      // 2. Seleccionar año y mes (la página actualizada usa id="anio" e id="mes")
+      await page.select('#anio', String(p.anio));
+      await page.select('#mes', String(p.mes));
+
+      await page.evaluate(() => {
+        document.querySelector('#mes')?.dispatchEvent(new Event('change', { bubbles: true }));
+        document.querySelector('#anio')?.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+
+      await new Promise((r) => setTimeout(r, 150));
+
+      // 3. Registrar la espera ANTES del clic para no perder la respuesta.
+      // Resuelve apenas llega la respuesta (sin polling) y cubre reCAPTCHA + API.
+      const apiResponsePromise = page
+        .waitForResponse((response) => response.url().includes('consulta_padron'), {
+          timeout: API_RESPONSE_TIMEOUT_MS,
+        })
+        .then(async (response) => {
+          const buffer = await response.buffer();
+          const text = new TextDecoder('iso-8859-1').decode(buffer);
+          return JSON.parse(text);
+        })
+        .catch((e) => {
+          if (e?.name !== 'TimeoutError') {
+            console.error('[SIRCREB Bot] Error al decodificar respuesta:', e);
+          }
+          return null;
+        });
+
+      // 4. Clic en Consultar (el botón tiene classes "boton btn btn-primary", confirmado en DOM live)
+      const submitBtn = await page.$(SUBMIT_SELECTOR);
+      if (!submitBtn) {
+        throw new Error('No se encontró el botón Consultar');
+      }
+      await submitBtn.click();
+
+      return apiResponsePromise;
+    };
+
     // 3. Iterar por cada período pendiente en la misma sesión
     for (const p of pendingPeriods) {
       const periodKey = `${p.anio}-${String(p.mes).padStart(2, '0')}`;
-      let apiResponse = null;
-
-      const onResponse = async (response) => {
-        if (response.url().includes('consulta_padron')) {
-          try {
-            const buffer = await response.buffer();
-            const text = new TextDecoder('iso-8859-1').decode(buffer);
-            apiResponse = JSON.parse(text);
-          } catch (e) {
-            console.error('[SIRCREB Bot] Error al decodificar respuesta:', e);
-          }
-        }
-      };
-
-      page.on('response', onResponse);
 
       try {
-        // Cerrar modal anterior si quedó abierto
-        const closeBtn = await page.$('.btn-close, button.close, .modal-header button, .modal button');
-        if (closeBtn) {
-          try { await closeBtn.click(); } catch (e) {}
-          await new Promise((r) => setTimeout(r, 150));
-        }
-
-        // Seleccionar año y mes (la página actualizada usa id="anio" e id="mes")
-        await page.select('#anio', String(p.anio));
-        await page.select('#mes', String(p.mes));
-
-        await page.evaluate(() => {
-          document.querySelector('#mes')?.dispatchEvent(new Event('change', { bubbles: true }));
-          document.querySelector('#anio')?.dispatchEvent(new Event('change', { bubbles: true }));
-        });
-
-        await new Promise((r) => setTimeout(r, 150));
-
-        // Clic en Consultar (el botón tiene classes "boton btn btn-primary", confirmado en DOM live)
-        const submitBtn = await page.$('button.boton.btn-primary, button.boton');
-        if (!submitBtn) {
-          throw new Error('No se encontró el botón Consultar');
-        }
-        await submitBtn.click();
-
-        // Esperar la respuesta de la API (hasta 8 segundos)
-        for (let i = 0; i < 40; i++) {
-          if (apiResponse) break;
-          await new Promise((r) => setTimeout(r, 200));
-        }
+        let apiResponse = await submitPeriod(p);
+        let domAlert = null;
 
         if (!apiResponse) {
-          // Si no hubo respuesta de la API, revisar si apareció un mensaje en el DOM
-          const domAlert = await page.evaluate(() => {
+          domAlert = await page.evaluate(() => {
             const alert = document.querySelector('.modal, .alert, .invalid-feedback');
             return alert ? alert.innerText.trim() : null;
           });
+        }
 
+        const isTransient =
+          (apiResponse?.error && String(apiResponse.error.detail || '').toLowerCase().includes('error inesperado')) ||
+          (domAlert && domAlert.toLowerCase().includes('error inesperado'));
+
+        if (isTransient) {
+          console.warn(`[SIRCREB Bot] Error transitorio en ${periodKey}, reintentando una vez...`);
+          await new Promise((r) => setTimeout(r, 1200));
+          apiResponse = await submitPeriod(p);
+          if (!apiResponse) {
+            domAlert = await page.evaluate(() => {
+              const alert = document.querySelector('.modal, .alert, .invalid-feedback');
+              return alert ? alert.innerText.trim() : null;
+            });
+          }
+        }
+
+        if (!apiResponse) {
           results.periodos[periodKey] = {
             status: 'error',
             error: domAlert || 'Tiempo de espera agotado sin respuesta del servidor de Comarb.',
@@ -397,15 +529,18 @@ export async function queryComarbPadron(sistema = 'sirtac', cuit, periodos = [])
           alicuota: null,
           rate: null,
         };
-      } finally {
-        page.off('response', onResponse);
       }
     }
 
   } finally {
-    try {
-      await page.close();
-    } catch (e) {}
+    activeQueries--;
+    if (page) {
+      try {
+        await page.close();
+      } catch (e) {}
+    }
+    // Dejar una pestaña lista para la próxima consulta y programar el cierre por inactividad
+    prewarmPage();
     scheduleBrowserClose();
   }
 
@@ -432,7 +567,18 @@ const server = http.createServer(async (req, res) => {
   const pathname = reqUrl.pathname;
 
   // Endpoint de salud / estado
+  // Con ?warm=1 además lanza Chrome y precarga COMARB en segundo plano (no bloquea la respuesta)
   if (pathname === '/api/health') {
+    const warm = reqUrl.searchParams.get('warm') === '1';
+    if (warm) {
+      cancelBrowserClose();
+      try {
+        prewarmPage();
+      } catch (e) {
+        console.warn('[SIRCREB Bot] No se pudo iniciar la precarga:', e.message);
+      }
+      scheduleBrowserClose();
+    }
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(
       JSON.stringify({
@@ -440,7 +586,10 @@ const server = http.createServer(async (req, res) => {
         service: 'SIRCREB/SIRTAC/SIRCUPA Bot API',
         defaultSistema: 'sirtac',
         supportedSistemas: ['sirtac', 'sircreb', 'sircupa'],
-        version: '1.0.0',
+        version: '1.1.0',
+        browserReady: !!(sharedBrowser && sharedBrowser.connected),
+        warmPage: !!warmPagePromise,
+        activeQueries,
         timestamp: new Date().toISOString(),
       })
     );
