@@ -7,6 +7,7 @@
   "scripts": {
     "start": "node sircreb-server.js",
     "dev": "node sircreb-server.js",
+    "host": "node start-host.js",
     "bot": "node sircreb-server.js"
   },
   "keywords": [

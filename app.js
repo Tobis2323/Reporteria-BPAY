@@ -211,12 +211,13 @@ let selectedIibbMethod = "auto"; // "auto" (predeterminado) | "manual"
 let isBotOnline        = false;
 let botCheckTimer      = null;
 
-// URLs del servicio Bot API (Nube Render y local)
+// URLs del servicio Bot API (Local, Túnel Ngrok dedicado en tu PC, y Nube Render de respaldo)
 const RENDER_BOT_URL = "https://sircreb-bot.onrender.com";
 const LOCAL_BOT_URL  = "http://127.0.0.1:3000";
+const NGROK_BOT_URL  = window.NGROK_BOT_URL || "https://chive-candle-poem.ngrok-free.dev";
 let BOT_API_BASE     = (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
   ? LOCAL_BOT_URL
-  : (window.SIRCREB_BOT_URL || RENDER_BOT_URL);
+  : (window.SIRCREB_BOT_URL || NGROK_BOT_URL || RENDER_BOT_URL);
 
 // Base de datos de alícuotas centralizada en Google Sheets
 const GOOGLE_SHEETS_ID     = window.GOOGLE_SHEETS_ID || "1_Scfvop57BcCcVaFbe_-ARYPvtrQzvU0bPtcwmLkj2E";
@@ -342,7 +343,10 @@ function reset() {
  * para que la consulta posterior no pague el arranque en frío. No bloquea al usuario.
  */
 function warmBot() {
-  fetch(`${BOT_API_BASE}/api/health?warm=1`, { method: "GET" }).catch(() => {});
+  fetch(`${BOT_API_BASE}/api/health?warm=1`, {
+    method: "GET",
+    headers: { "ngrok-skip-browser-warning": "true" },
+  }).catch(() => {});
 }
 
 /**
@@ -364,6 +368,11 @@ async function runBotHealthCheck() {
   if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
     candidateUrls.push(LOCAL_BOT_URL);
   }
+  // Prioridad 1: Bot dedicado en tu PC vía Ngrok
+  if (NGROK_BOT_URL) {
+    candidateUrls.push(NGROK_BOT_URL);
+  }
+  // Prioridad 2: Respaldo en la nube (Render) si tu PC está apagada
   candidateUrls.push(RENDER_BOT_URL);
 
   for (const url of candidateUrls) {
@@ -372,6 +381,7 @@ async function runBotHealthCheck() {
       const timeoutId = setTimeout(() => controller.abort(), 7000);
       const res = await fetch(`${url}/api/health`, {
         method: "GET",
+        headers: { "ngrok-skip-browser-warning": "true" },
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
@@ -382,7 +392,15 @@ async function runBotHealthCheck() {
           BOT_API_BASE = url;
           isBotOnline = true;
           if (botStatusPill) botStatusPill.classList.add("online");
-          if (botStatusLabel) botStatusLabel.textContent = url.includes("render") ? "Bot en la Nube (Online)" : "Bot Conectado";
+          let label = "Bot Conectado";
+          if (url.includes("ngrok")) {
+            label = "Bot Dedicado (Online ⚡)";
+          } else if (url.includes("render")) {
+            label = "Bot en la Nube (Online)";
+          } else {
+            label = "Bot Local (Online ⚡)";
+          }
+          if (botStatusLabel) botStatusLabel.textContent = label;
           if (botHint) botHint.style.display = "none";
           return true;
         }
@@ -1146,7 +1164,10 @@ async function fetchBotAlicuotas(sistema, cuit, periods) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), BOT_REQUEST_TIMEOUT_MS);
     try {
-      const res = await fetch(url, { signal: controller.signal });
+      const res = await fetch(url, {
+        headers: { "ngrok-skip-browser-warning": "true" },
+        signal: controller.signal,
+      });
       if (!res.ok) {
         if (BOT_RETRYABLE_STATUS.includes(res.status) && attempt < maxAttempts) {
           await new Promise(r => setTimeout(r, 3000));
