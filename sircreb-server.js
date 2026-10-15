@@ -269,7 +269,7 @@ async function acquireReadyPage() {
     try {
       const page = await pending;
       if (!page.isClosed() && (await page.$(CUIT_SELECTOR_ANY))) {
-        console.log('[SIRCREB Bot] Usando pestaña precargada.');
+        console.log(`\x1b[90m[${new Date().toLocaleTimeString('es-AR', { hour12: false })}]\x1b[0m \x1b[35m⚡ Usando pestaña Chrome precargada (navegación instantánea)\x1b[0m`);
         return page;
       }
       try { await page.close(); } catch (e) {}
@@ -653,12 +653,20 @@ const server = http.createServer(async (req, res) => {
     }
 
     try {
-      console.log(`[SIRCREB Bot] Consultando sistema=${sistema}, cuit=${cuit}, periodos=${periodStrs.join(', ')}`);
+      const startTime = Date.now();
+      const timeStr = new Date().toLocaleTimeString('es-AR', { hour12: false });
+      const cuitFmt = formatCuit(cuit);
+      console.log(`\x1b[90m[${timeStr}]\x1b[0m \x1b[36m🔍 [${sistema.toUpperCase()}]\x1b[0m Consulta para CUIT \x1b[1m${cuitFmt}\x1b[0m (${parsedPeriods.length} período/s: \x1b[33m${periodStrs.join(', ')}\x1b[0m)...`);
       const data = await queryComarbPadron(sistema, cuit, parsedPeriods);
+      const durationSec = ((Date.now() - startTime) / 1000).toFixed(1);
+      const razon = data.razonSocial ? ` | ${data.razonSocial}` : '';
+      console.log(`\x1b[90m[${timeStr}]\x1b[0m \x1b[32m✅ [${sistema.toUpperCase()}]\x1b[0m Consulta completada en \x1b[1m${durationSec}s\x1b[0m${razon}`);
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ success: true, source: process.env.RENDER ? 'bot_cloud' : 'bot_local', ...data }));
     } catch (err) {
-      console.error('[SIRCREB Bot] Error al procesar consulta:', err);
+      const timeStr = new Date().toLocaleTimeString('es-AR', { hour12: false });
+      const cuitFmt = formatCuit(cuit);
+      console.error(`\x1b[90m[${timeStr}]\x1b[0m \x1b[31m❌ [${sistema.toUpperCase()}]\x1b[0m Error en CUIT ${cuitFmt}: ${err.message || 'Error interno'}`);
       res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({ success: false, error: err.message || 'Error interno del bot' }));
     }
@@ -728,13 +736,15 @@ if (cliCuitIdx !== -1 && cliPeriodosIdx !== -1) {
 } else {
   // Iniciar servidor HTTP (0.0.0.0 para aceptar conexiones locales y de la nube como Render)
   server.listen(PORT, '0.0.0.0', () => {
-    console.log('=====================================================');
-    console.log(`  🤖 SIRCREB / SIRTAC / SIRCUPA Bot API Activo`);
-    console.log(`  🚀 Escuchando en: http://0.0.0.0:${PORT}`);
-    console.log(`  ⚡ Sistema predeterminado: SIRTAC`);
-    console.log(`  🔍 Endpoints disponibles:`);
-    console.log(`     - GET /api/health`);
-    console.log(`     - GET /api/alicuotas?sistema=sirtac&cuit=...&periodos=...`);
-    console.log('=====================================================');
+    if (!process.env.SILENT_BANNER) {
+      console.log('=====================================================');
+      console.log(`  🤖 SIRCREB / SIRTAC / SIRCUPA Bot API Activo`);
+      console.log(`  🚀 Escuchando en: http://0.0.0.0:${PORT}`);
+      console.log(`  ⚡ Sistema predeterminado: SIRTAC`);
+      console.log(`  🔍 Endpoints disponibles:`);
+      console.log(`     - GET /api/health`);
+      console.log(`     - GET /api/alicuotas?sistema=sirtac&cuit=...&periodos=...`);
+      console.log('=====================================================');
+    }
   });
 }

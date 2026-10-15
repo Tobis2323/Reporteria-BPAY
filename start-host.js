@@ -51,33 +51,52 @@ function findNgrokPath() {
   return 'ngrok';
 }
 
-console.log('=====================================================');
-console.log('  🚀 INICIANDO BOT DEDICADO SIRTAC / SIRCREB');
-console.log('  🏢 Bezza Pay - Host Local con Túnel Ngrok');
-console.log('=====================================================');
-console.log(`  🌐 Dominio público: https://${NGROK_DOMAIN}`);
-console.log(`  🔌 Puerto local:    ${PORT}`);
-console.log('=====================================================\n');
-
 // Liberar procesos previos si la ventana se cerró abruptamente
 freePortAndNgrok(PORT);
 
-// 1. Iniciar servidor local
+// 1. Imprimir encabezado estético de Bezza Pay en español
+const border = '═'.repeat(69);
+console.clear();
+console.log('\x1b[38;2;208;0;112m╔' + border + '╗\x1b[0m');
+console.log('\x1b[38;2;208;0;112m║\x1b[0m  \x1b[1m\x1b[37m⚡ BEZZA PAY - BOT DEDICADO DE PADRONES (SIRTAC / SIRCREB)          \x1b[0m\x1b[38;2;208;0;112m║\x1b[0m');
+console.log('\x1b[38;2;208;0;112m╠' + border + '╣\x1b[0m');
+console.log('\x1b[38;2;208;0;112m║\x1b[0m  🟢 \x1b[1mEstado:\x1b[0m          \x1b[32mEN LÍNEA (Listo para recibir consultas)         \x1b[0m\x1b[38;2;208;0;112m║\x1b[0m');
+console.log(`\x1b[38;2;208;0;112m║\x1b[0m  🌐 \x1b[1mEnlace Público:\x1b[0m  \x1b[36mhttps://${NGROK_DOMAIN.padEnd(40)}\x1b[0m\x1b[38;2;208;0;112m║\x1b[0m`);
+console.log(`\x1b[38;2;208;0;112m║\x1b[0m  🔌 \x1b[1mPuerto Local:\x1b[0m    \x1b[33mhttp://localhost:${PORT.padEnd(38)}\x1b[0m\x1b[38;2;208;0;112m║\x1b[0m`);
+console.log('\x1b[38;2;208;0;112m║\x1b[0m  📊 \x1b[1mPanel Ngrok:\x1b[0m     \x1b[90mhttp://127.0.0.1:4040                           \x1b[0m\x1b[38;2;208;0;112m║\x1b[0m');
+console.log('\x1b[38;2;208;0;112m╠' + border + '╣\x1b[0m');
+console.log('\x1b[38;2;208;0;112m║\x1b[0m  💡 Mantén esta ventana abierta durante tu jornada laboral.          \x1b[38;2;208;0;112m║\x1b[0m');
+console.log('\x1b[38;2;208;0;112m║\x1b[0m  💡 Para detener el bot, presiona \x1b[1mCtrl + C\x1b[0m o cierra esta ventana.    \x1b[38;2;208;0;112m║\x1b[0m');
+console.log('\x1b[38;2;208;0;112m╚' + border + '╝\x1b[0m\n');
+console.log('\x1b[1m📋 REGISTRO DE ACTIVIDAD EN TIEMPO REAL:\x1b[0m');
+console.log('\x1b[90m----------------------------------------------------------------------\x1b[0m');
+
+// 2. Iniciar servidor local
 const serverPath = join(__dirname, 'sircreb-server.js');
 const serverProc = spawn(process.execPath, [serverPath], {
   cwd: __dirname,
-  env: { ...process.env, PORT },
+  env: { ...process.env, PORT, SILENT_BANNER: '1' },
   stdio: 'inherit',
 });
 
-// 2. Iniciar túnel de Ngrok hacia el puerto 3000
+// 3. Iniciar túnel de Ngrok hacia el puerto 3000 de forma silenciosa
 const ngrokBin = findNgrokPath();
-const ngrokArgs = ['http', `--url=${NGROK_DOMAIN}`, PORT];
+const ngrokArgs = ['http', `--url=${NGROK_DOMAIN}`, PORT, '--log=stdout', '--log-level=error'];
 
 const ngrokProc = spawn(ngrokBin, ngrokArgs, {
   cwd: __dirname,
-  stdio: 'inherit',
+  stdio: ['ignore', 'pipe', 'pipe'],
   shell: process.platform === 'win32',
+});
+
+ngrokProc.stdout.on('data', (d) => {
+  const msg = d.toString().trim();
+  if (msg) console.error(`\x1b[31m[Ngrok]\x1b[0m ${msg}`);
+});
+
+ngrokProc.stderr.on('data', (d) => {
+  const msg = d.toString().trim();
+  if (msg) console.error(`\x1b[31m[Ngrok]\x1b[0m ${msg}`);
 });
 
 let isCleaningUp = false;

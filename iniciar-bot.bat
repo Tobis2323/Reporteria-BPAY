@@ -1,5 +1,6 @@
 @echo off
-title Bot SIRTAC / SIRCREB - Bezza Pay (Tu PC)
+chcp 65001 > nul
+title Bot Dedicado SIRTAC / SIRCREB - Bezza Pay
 cd /d "%~dp0"
 
 echo =====================================================
