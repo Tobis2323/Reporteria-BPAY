@@ -391,12 +391,17 @@ async function runBotHealthCheck() {
         if (data.status === "online") {
           BOT_API_BASE = url;
           isBotOnline = true;
-          if (botStatusPill) botStatusPill.classList.add("online");
+          const isDedicated = url.includes("ngrok") || url.includes("localhost") || url.includes("127.0.0.1");
+          if (botStatusPill) {
+            botStatusPill.classList.add("online");
+            botStatusPill.classList.toggle("dedicated", isDedicated);
+            botStatusPill.classList.toggle("cloud", !isDedicated);
+          }
           let label = "Bot Conectado";
           if (url.includes("ngrok")) {
             label = "Bot Dedicado (Online ⚡)";
           } else if (url.includes("render")) {
-            label = "Bot en la Nube (Online)";
+            label = "Bot en la Nube (Online 🤖)";
           } else {
             label = "Bot Local (Online ⚡)";
           }
@@ -1152,45 +1157,60 @@ const BOT_REQUEST_TIMEOUT_MS = 90000;           // Cubre arranque de Chrome + va
 const BOT_RETRYABLE_STATUS   = [502, 503, 504]; // Render devuelve estos códigos mientras despierta o redeploya
 
 /**
- * Consulta la API local del Bot para obtener las alícuotas mensuales del CUIT.
- * Incluye timeout y un reintento ante errores de red o servidor iniciando.
+ * Consulta la API local o en la nube del Bot para obtener las alícuotas mensuales del CUIT.
+ * Intenta primero con BOT_API_BASE (dedicado en tu PC si está activo) y como respaldo automático
+ * con Render si la PC está apagada.
  */
 async function fetchBotAlicuotas(sistema, cuit, periods) {
   const periodKeys = periods.map(p => p.key).join(",");
-  const url = `${BOT_API_BASE}/api/alicuotas?sistema=${encodeURIComponent(sistema)}&cuit=${encodeURIComponent(cuit)}&periodos=${encodeURIComponent(periodKeys)}`;
-  const maxAttempts = 2;
+  const endpointsToTry = [BOT_API_BASE];
+  if (BOT_API_BASE !== RENDER_BOT_URL) {
+    endpointsToTry.push(RENDER_BOT_URL);
+  }
 
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), BOT_REQUEST_TIMEOUT_MS);
-    try {
-      const res = await fetch(url, {
-        headers: { "ngrok-skip-browser-warning": "true" },
-        signal: controller.signal,
-      });
-      if (!res.ok) {
-        if (BOT_RETRYABLE_STATUS.includes(res.status) && attempt < maxAttempts) {
-          await new Promise(r => setTimeout(r, 3000));
+  let lastError = null;
+  for (const baseUrl of endpointsToTry) {
+    const isDedicatedHost = baseUrl.includes("ngrok") || baseUrl.includes("localhost") || baseUrl.includes("127.0.0.1");
+    const defaultSourceTag = isDedicatedHost ? "bot_local" : "bot_cloud";
+    const url = `${baseUrl}/api/alicuotas?sistema=${encodeURIComponent(sistema)}&cuit=${encodeURIComponent(cuit)}&periodos=${encodeURIComponent(periodKeys)}`;
+    const maxAttempts = 2;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), BOT_REQUEST_TIMEOUT_MS);
+      try {
+        const res = await fetch(url, {
+          headers: { "ngrok-skip-browser-warning": "true" },
+          signal: controller.signal,
+        });
+        if (!res.ok) {
+          if (BOT_RETRYABLE_STATUS.includes(res.status) && attempt < maxAttempts) {
+            await new Promise(r => setTimeout(r, 2000));
+            continue;
+          }
+          const errJson = await res.json().catch(() => ({}));
+          throw new Error(errJson.error || `Error HTTP ${res.status}`);
+        }
+        const data = await res.json();
+        data._botSource = data.source || defaultSourceTag;
+        return data;
+      } catch (err) {
+        lastError = err;
+        if (err.name === "AbortError") {
+          break;
+        }
+        if (err instanceof TypeError && attempt < maxAttempts) {
+          await new Promise(r => setTimeout(r, 2000));
           continue;
         }
-        const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.error || `Error HTTP ${res.status}`);
+        break;
+      } finally {
+        clearTimeout(timeoutId);
       }
-      return await res.json();
-    } catch (err) {
-      if (err.name === "AbortError") {
-        throw new Error(`El Bot no respondió en ${BOT_REQUEST_TIMEOUT_MS / 1000} s. Puede estar iniciando; reintentá en un minuto.`);
-      }
-      // Error de red (servidor despertando / reiniciando): reintentar una vez
-      if (err instanceof TypeError && attempt < maxAttempts) {
-        await new Promise(r => setTimeout(r, 3000));
-        continue;
-      }
-      throw err;
-    } finally {
-      clearTimeout(timeoutId);
     }
   }
+
+  throw lastError || new Error(`No se pudo consultar el Bot.`);
 }
 
 const MESES_MAP = {
@@ -1978,8 +1998,10 @@ async function processFile(file) {
             try {
               const botResponse = await fetchBotAlicuotas(selectedSistema, cuilValue, pendingPeriods);
               if (botResponse && botResponse.periodos) {
+                const isDedicatedHost = BOT_API_BASE.includes("ngrok") || BOT_API_BASE.includes("localhost") || BOT_API_BASE.includes("127.0.0.1");
+                const botOrigen = botResponse._botSource || (isDedicatedHost ? "bot_local" : "bot_cloud");
                 for (const [key, val] of Object.entries(botResponse.periodos)) {
-                  alicuotasMap[key] = { ...val, origen: "bot" };
+                  alicuotasMap[key] = { ...val, origen: botOrigen };
                 }
                 if (botResponse.razonSocial && !botRazonSocial) {
                   botRazonSocial = botResponse.razonSocial;
@@ -2141,8 +2163,10 @@ async function processFile(file) {
                 let sourceBadge = "";
                 if (pdata.origen === "google_sheets") {
                   sourceBadge = ` <span style="font-size: 10px; background: rgba(16, 185, 129, 0.12); color: #059669; border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 4px; padding: 1px 5px; margin-left: 4px; font-weight: 600;" title="Obtenido de la base de datos Google Sheets">⚡ BD</span>`;
-                } else if (pdata.origen === "bot") {
-                  sourceBadge = ` <span style="font-size: 10px; background: rgba(208, 0, 112, 0.10); color: #d00070; border: 1px solid rgba(208, 0, 112, 0.20); border-radius: 4px; padding: 1px 5px; margin-left: 4px; font-weight: 600;" title="Consultado en vivo con el Bot COMARB">🤖 Bot</span>`;
+                } else if (pdata.origen === "bot_local") {
+                  sourceBadge = ` <span style="font-size: 10px; background: rgba(245, 158, 11, 0.14); color: #b45309; border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 4px; padding: 1px 5px; margin-left: 4px; font-weight: 600;" title="Consultado con tu Bot hosteado en tu PC (ultra rápido)">⚡ Bot</span>`;
+                } else if (pdata.origen === "bot" || pdata.origen === "bot_cloud") {
+                  sourceBadge = ` <span style="font-size: 10px; background: rgba(208, 0, 112, 0.10); color: #d00070; border: 1px solid rgba(208, 0, 112, 0.20); border-radius: 4px; padding: 1px 5px; margin-left: 4px; font-weight: 600;" title="Consultado en vivo con el Bot en la nube (Render)">🤖 Bot</span>`;
                 }
 
                 return `

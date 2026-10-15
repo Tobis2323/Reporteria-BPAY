@@ -401,6 +401,18 @@ body {
   border-color: #a7f3d0;
 }
 
+.bot-status-pill.online.dedicated {
+  background: #fef3c7;
+  color: #92400e;
+  border-color: #fcd34d;
+}
+
+.bot-status-pill.online.cloud {
+  background: #fdf2f8;
+  color: #9d174d;
+  border-color: #fbcfe8;
+}
+
 .bot-status-dot {
   width: 7px;
   height: 7px;
@@ -413,6 +425,16 @@ body {
   background: #10b981;
   box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.25);
   animation: pulse-dot 1.4s ease-in-out infinite;
+}
+
+.bot-status-pill.online.dedicated .bot-status-dot {
+  background: #f59e0b;
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.25);
+}
+
+.bot-status-pill.online.cloud .bot-status-dot {
+  background: #ec4899;
+  box-shadow: 0 0 0 2px rgba(236, 72, 153, 0.25);
 }
 
 .bot-hint {

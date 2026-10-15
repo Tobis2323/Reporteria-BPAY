@@ -588,6 +588,7 @@ const server = http.createServer(async (req, res) => {
       JSON.stringify({
         status: 'online',
         service: 'SIRCREB/SIRTAC/SIRCUPA Bot API',
+        source: process.env.RENDER ? 'bot_cloud' : 'bot_local',
         defaultSistema: 'sirtac',
         supportedSistemas: ['sirtac', 'sircreb', 'sircupa'],
         version: '1.1.0',
@@ -653,7 +654,7 @@ const server = http.createServer(async (req, res) => {
       console.log(`[SIRCREB Bot] Consultando sistema=${sistema}, cuit=${cuit}, periodos=${periodStrs.join(', ')}`);
       const data = await queryComarbPadron(sistema, cuit, parsedPeriods);
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({ success: true, ...data }));
+      res.end(JSON.stringify({ success: true, source: process.env.RENDER ? 'bot_cloud' : 'bot_local', ...data }));
     } catch (err) {
       console.error('[SIRCREB Bot] Error al procesar consulta:', err);
       res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
