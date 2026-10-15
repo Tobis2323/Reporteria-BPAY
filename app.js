@@ -2423,4 +2423,10 @@ if (headerBrand) {
 
 /* --- Inicialización de chequeo del Bot al cargar la página --- */
 checkBotHealth();
-setInterval(checkBotHealth, 8000);
+// Chequeo periódico de salud cada 20 s (mantiene el estado activo sin sobrecargar el túnel)
+setInterval(checkBotHealth, 20000);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") {
+    checkBotHealth();
+  }
+});
