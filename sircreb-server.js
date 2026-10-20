@@ -675,6 +675,9 @@ const server = http.createServer(async (req, res) => {
 
   // Servir archivos estáticos del procesador web (HTML, CSS, JS, imágenes)
   let filePath = join(__dirname, pathname === '/' ? 'index.html' : pathname.replace(/^\//, ''));
+  if (!existsSync(filePath) && existsSync(filePath + '.html')) {
+    filePath = filePath + '.html';
+  }
   if (existsSync(filePath)) {
     const ext = extname(filePath).toLowerCase();
     const MIME_TYPES = {

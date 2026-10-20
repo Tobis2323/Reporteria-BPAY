@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Comprobantes de Transferencia | Bezza Pay</title>
+    <meta name="description" content="Generador de comprobantes oficiales de transferencias Bezza Pay con carga inteligente de datos desordenados y exportación en formato PNG." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="style.css?v=2" />
+    <link rel="stylesheet" href="comprobantes.css?v=1" />
+    <link rel="shortcut icon" href="Logo.png?v=2" type="image/png" />
+  </head>
+  <body>
+    <!-- ENCABEZADO OFICIAL BEZZA PAY -->
+    <header class="header" role="banner">
+      <div class="header__inner">
+        <div class="header__left">
+          <a href="index.html" class="header__brand" id="headerBrand" title="Bezza Pay - Menú Principal" aria-label="Bezza Pay">
+            <img src="BezzaPaySVG.svg" alt="Bezza Pay" class="header__logo" />
+          </a>
+          <nav class="header__nav" aria-label="Navegación principal">
+            <a href="index.html" class="header__nav-link" id="navReporteria">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+                <polyline points="10 9 9 9 8 9"></polyline>
+              </svg>
+              <span class="nav-text">Reportería</span>
+            </a>
+            <a href="comprobantes.html" class="header__nav-link active" id="navComprobantes">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="4" width="20" height="16" rx="2"></rect>
+                <line x1="6" y1="9" x2="18" y2="9"></line>
+                <line x1="6" y1="13" x2="14" y2="13"></line>
+                <line x1="6" y1="17" x2="10" y2="17"></line>
+              </svg>
+              <span class="nav-text">Comprobantes</span>
+            </a>
+          </nav>
+        </div>
+        <div class="header__badge">
+          <span class="badge badge--internal">Solo uso Interno</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- CONTENIDO PRINCIPAL -->
+    <main class="main" id="main-content">
+      <div class="comprobantes-layout">
+        
+        <!-- ENCABEZADO DE SECCIÓN -->
+        <div class="comprobantes-header">
+          <h1 class="comprobantes-title">
+            <span>Comprobantes de</span>
+            <span class="comprobantes-title-gradient">Transferencia</span>
+          </h1>
+        </div>
+
+        <!-- GRILLA PRINCIPAL: CARGA Y VISTA PREVIA -->
+        <div class="comprobantes-grid">
+          
+          <!-- COLUMNA IZQUIERDA: FORMULARIO Y CARGA DESORDENADA -->
+          <div class="comprobantes-form-col">
+            
+            <!-- CAJA DE PEGADO RÁPIDO INTELIGENTE (DATOS DESORDENADOS) -->
+            <div class="comp-card smart-paste-box">
+              <div class="comp-card__header">
+                <div class="comp-card__title">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#c514a7" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                  </svg>
+                  <span>Carga Rápida</span>
+                </div>
+                <span class="comp-card__title-badge">Auto-Detección</span>
+              </div>
+              
+              <textarea 
+                id="rawInput" 
+                class="smart-textarea" 
+                placeholder="Ejemplo:
+Transf 185.000 de Juan Carlos Rodriguez CUIT 20-33445566-7 CVU 0000003100019283746501 a Maria Alvarez CUIT 27-41029384-5 CVU 0000004400083920194827 coelsa 000893458237589234 fecha 16/10/2026 15:30 hs..."></textarea>
+
+              <div class="smart-actions">
+                <button type="button" id="btnParse" class="btn-comp btn-comp--primary">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83"/>
+                  </svg>
+                  <span>Procesar y Autocompletar</span>
+                </button>
+                <button type="button" id="btnPasteClipboard" class="btn-comp btn-comp--outline">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+                    <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
+                  </svg>
+                  <span>Pegar Portapapeles</span>
+                </button>
+                <button type="button" id="btnClear" class="btn-comp btn-comp--ghost">
+                  <span>Limpiar</span>
+                </button>
+              </div>
+
+              <!-- Mensaje de feedback del parser -->
+              <div id="parseStatusMsg" class="parse-feedback"></div>
+            </div>
+
+            <!-- TARJETA: DATOS DE ORIGEN -->
+            <div class="comp-card">
+              <div class="comp-card__header">
+                <div class="comp-card__title">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="12" cy="7" r="4"></circle>
+                  </svg>
+                  <span>Datos del Origen</span>
+                </div>
+                <span class="comp-card__title-badge">Origen</span>
+              </div>
+
+              <div class="form-grid">
+                <div class="form-group">
+                  <label for="origenNombre" class="form-label">Nombre del Titular de Origen</label>
+                  <input type="text" id="origenNombre" class="form-input" placeholder="Ej: Juan Carlos Rodríguez" />
+                </div>
+
+                <div class="form-group">
+                  <label for="origenCuit" class="form-label">CUIL / CUIT de Origen</label>
+                  <input type="text" id="origenCuit" class="form-input" placeholder="XX-XXXXXXXX-X (11 dígitos)" maxlength="14" />
+                </div>
+
+                <div class="form-group">
+                  <label for="origenCvu" class="form-label">
+                    <span>CVU de Origen</span>
+                    <span id="origenCvuCounter" class="form-label-counter">0/22</span>
+                  </label>
+                  <input type="text" id="origenCvu" class="form-input" placeholder="0000003100019283746501 (22 dígitos)" maxlength="22" />
+                </div>
+              </div>
+            </div>
+
+            <!-- BOTÓN INTERCAMBIAR ORIGEN Y DESTINO -->
+            <div class="swap-divider">
+              <button type="button" id="btnSwap" class="btn-swap" title="Invertir datos de Origen y Destino">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <polyline points="19 12 12 19 5 12"></polyline>
+                </svg>
+                <span>Invertir Origen y Destino</span>
+              </button>
+            </div>
+
+            <!-- TARJETA: DATOS DE DESTINO -->
+            <div class="comp-card">
+              <div class="comp-card__header">
+                <div class="comp-card__title">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="8.5" cy="7" r="4"></circle>
+                    <line x1="20" y1="8" x2="20" y2="14"></line>
+                    <line x1="23" y1="11" x2="17" y2="11"></line>
+                  </svg>
+                  <span>Datos del Destino</span>
+                </div>
+                <span class="comp-card__title-badge">Destino</span>
+              </div>
+
+              <div class="form-grid">
+                <div class="form-group">
+                  <label for="destinoNombre" class="form-label">Nombre del Titular de Destino</label>
+                  <input type="text" id="destinoNombre" class="form-input" placeholder="Ej: María Belén Álvarez" />
+                </div>
+
+                <div class="form-group">
+                  <label for="destinoCuit" class="form-label">CUIL / CUIT de Destino</label>
+                  <input type="text" id="destinoCuit" class="form-input" placeholder="XX-XXXXXXXX-X (11 dígitos)" maxlength="14" />
+                </div>
+
+                <div class="form-group">
+                  <label for="destinoCvu" class="form-label">
+                    <span>CVU / CBU de Destino</span>
+                    <span id="destinoCvuCounter" class="form-label-counter">0/22</span>
+                  </label>
+                  <input type="text" id="destinoCvu" class="form-input" placeholder="0000004400083920194827 (22 dígitos)" maxlength="22" />
+                </div>
+              </div>
+            </div>
+
+            <!-- TARJETA: DATOS DE LA OPERACIÓN -->
+            <div class="comp-card">
+              <div class="comp-card__header">
+                <div class="comp-card__title">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="12" y1="1" x2="12" y2="23"></line>
+                    <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+                  </svg>
+                  <span>Datos de la Operación</span>
+                </div>
+                <span class="comp-card__title-badge">Transacción</span>
+              </div>
+
+              <div class="form-grid">
+                <!-- Monto -->
+                <div class="form-group">
+                  <label for="monto" class="form-label">Monto de la Transferencia ($ ARS)</label>
+                  <div class="form-input-wrap">
+                    <span class="form-input-prefix">$</span>
+                    <input type="text" id="monto" class="form-input has-prefix" placeholder="185.000,00" />
+                  </div>
+                </div>
+
+                <!-- Fecha y Hora -->
+                <div class="form-group">
+                  <label for="fechaHora" class="form-label">Fecha y Hora de la Operación</label>
+                  <input type="text" id="fechaHora" class="form-input" placeholder="DD/MM/AAAA HH:mm hs" />
+                </div>
+
+                <!-- ID COELSA -->
+                <div class="form-group">
+                  <label for="idCoelsa" class="form-label">ID de Transacción COELSA</label>
+                  <input type="text" id="idCoelsa" class="form-input" placeholder="000893458237589234" />
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- COLUMNA DERECHA: VISTA PREVIA Y ACCIONES (STICKY) -->
+          <div class="comprobantes-preview-col">
+            <div class="preview-sticky">
+              <div class="preview-card">
+                
+                <!-- Acciones Principales -->
+                <div class="preview-actions">
+                  <button type="button" id="btnDownloadPng" class="btn-comp btn-comp--primary" style="width: 100%;">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                      <polyline points="7 10 12 15 17 10"></polyline>
+                      <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    <span>Descargar Comprobante (PNG)</span>
+                  </button>
+
+                  <div class="preview-actions-row">
+                    <button type="button" id="btnCopyImage" class="btn-comp btn-comp--secondary" title="Copiar al portapapeles para pegar en WhatsApp">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                      </svg>
+                      <span>Copiar Imagen</span>
+                    </button>
+                    <button type="button" id="btnFullscreen" class="btn-comp btn-comp--outline" title="Ver tamaño completo">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="15 3 21 3 21 9"></polyline>
+                        <polyline points="9 21 3 21 3 15"></polyline>
+                        <line x1="21" y1="3" x2="14" y2="10"></line>
+                        <line x1="3" y1="21" x2="10" y2="14"></line>
+                      </svg>
+                      <span>Ver Completo</span>
+                   </button>
+                  </div>
+                </div>
+
+                <!-- Contenedor del Comprobante (Canvas) -->
+                <div class="preview-canvas-wrap">
+                  <canvas id="receiptCanvas"></canvas>
+                </div>
+
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+    </main>
+
+    <!-- MODAL DE VISUALIZACIÓN EN TAMAÑO COMPLETO -->
+    <div id="compModal" class="comp-modal" aria-hidden="true">
+      <div class="comp-modal-content">
+        <button type="button" id="compModalClose" class="comp-modal-close" aria-label="Cerrar modal">&times;</button>
+        <h3 style="font-size: 18px; font-weight: 800; margin-bottom: 4px;">Vista Previa</h3>
+        <img id="compModalImg" class="comp-modal-img" alt="Comprobante Bezza Pay Completo" />
+        <button type="button" id="btnModalDownload" class="btn-comp btn-comp--primary" style="margin-top: 8px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          <span>Descargar Imagen PNG</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- TOAST NOTIFICACIÓN -->
+    <div id="toast" class="comp-toast" role="status" aria-live="polite"></div>
+
+    <!-- SCRIPTS -->
+    <script src="comprobantes.js"></script>
+  </body>
+</html>

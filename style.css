@@ -79,6 +79,7 @@ body {
   display: flex; align-items: center; gap: 14px;
   cursor: pointer;
   user-select: none;
+  text-decoration: none;
   transition: opacity 0.15s ease, transform 0.15s ease;
 }
 .header__brand:hover {
@@ -109,6 +110,73 @@ body {
   font-size: 10px; font-weight: 500;
   color: var(--color-text-3);
   letter-spacing: 0.08em; text-transform: uppercase;
+}
+
+/* Navegación en el header */
+.header__left {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.header__nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-left: 1.5px solid rgba(0, 0, 0, 0.08);
+  padding-left: 16px;
+}
+.header__nav-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: var(--radius-pill);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--color-text-2);
+  text-decoration: none;
+  transition: all 0.18s ease;
+  user-select: none;
+}
+.header__nav-link svg {
+  width: 15px;
+  height: 15px;
+  stroke: var(--color-text-3);
+  transition: stroke 0.18s ease;
+}
+.header__nav-link:hover {
+  color: var(--color-text);
+  background: rgba(0, 0, 0, 0.04);
+}
+.header__nav-link:hover svg {
+  stroke: var(--color-text);
+}
+.header__nav-link.active {
+  color: #111111;
+  background: #ffffff;
+  border: 1.5px solid #e5e5ea;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+}
+.header__nav-link.active span.nav-text {
+  background: var(--gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-weight: 800;
+}
+.header__nav-link.active svg {
+  stroke: #c514a7;
+}
+.nav-badge-new {
+  font-size: 9.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: #CAF14D;
+  color: #111111;
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+  line-height: 1.2;
 }
 
 .badge {
