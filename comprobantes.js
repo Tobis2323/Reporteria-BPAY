@@ -540,7 +540,7 @@ function renderComprobante() {
   ctx.textAlign = 'center';
   ctx.font = '800 21px "Public Sans", sans-serif';
   ctx.fillStyle = '#111111';
-  ctx.fillText('¡Transferencia Exitosa!', heroCenterX, 250);
+  ctx.fillText('¡Transferencia exitosa!', heroCenterX, 250);
   
   // Monto grande
   const montoVal = el.monto.value.trim() ? formatCurrency(el.monto.value) : '$ 0,00';
