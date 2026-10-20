@@ -148,156 +148,182 @@ function getCurrentDateTimeString() {
   return `${day}/${month}/${year} ${hours}:${minutes} hs`;
 }
 
+
 /**
- * Genera un ID COELSA aleatorio de 22 dígitos o estándar
+ * Parsea fechas en español tipo "20 de octubre a las 13:44"
  */
-function generateCoelsaId() {
-  let result = '000';
-  for (let i = 0; i < 19; i++) {
-    result += Math.floor(Math.random() * 10);
+function parseSpanishDate(text) {
+  const spanishMonths = {
+    enero: '01', febrero: '02', marzo: '03', abril: '04', mayo: '05', junio: '06',
+    julio: '07', agosto: '08', septiembre: '09', setiembre: '09', octubre: '10',
+    noviembre: '11', diciembre: '12'
+  };
+  
+  const mMatch = text.match(/(\d{1,2})\s+de\s+([a-zA-Záéíóúñ]+)(?:\s+de\s+(\d{4}))?\s*(?:a\s+las\s+)?(\d{1,2}:\d{2}(?::\d{2})?)/i);
+  if (mMatch) {
+    const day = mMatch[1].padStart(2, '0');
+    const monthName = mMatch[2].toLowerCase();
+    const month = spanishMonths[monthName] || '01';
+    const year = mMatch[3] || new Date().getFullYear();
+    const time = mMatch[4];
+    return `${day}/${month}/${year} ${time} hs`;
   }
-  return result;
+  return null;
 }
 
 /**
  * PARSER INTELIGENTE DE TEXTO DESORDENADO
- * Analiza texto desestructurado (WhatsApp, correos, chats, logs)
- * y extrae los 9 campos requeridos sin importar el orden ni el formato.
+ * Analiza texto desestructurado (extractos, resúmenes, WhatsApp, correos)
+ * y extrae los campos requeridos sin importar el orden ni el formato.
  */
 function parseUnstructuredText(text) {
   if (!text || !text.trim()) return {};
   
   const raw = text.trim();
-  const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   const result = {};
   
-  // 1. Extraer todos los CVUs de 22 dígitos encontrados
-  const cvuMatches = raw.match(/\b\d{22}\b/g) || [];
+  // 1. Extraer Razón Social (Emisor / Origen)
+  // La razón social siempre será el nombre del emisor
+  const rsRegex = /(?:raz[oó]n\s*social|nombre\s*emisor|titular\s*origen)\s*[:=\-]?\s*[\r\n]+\s*([^\r\n]+)|(?:raz[oó]n\s*social|nombre\s*emisor|titular\s*origen)\s*[:=\-]\s*([^\r\n]+)/i;
+  const rsMatch = raw.match(rsRegex);
+  if (rsMatch) {
+    result.origenNombre = cleanName(rsMatch[1] || rsMatch[2]);
+  }
   
-  // 2. Extraer todos los CUITs de 11 dígitos o con guiones
-  // Formato XX-XXXXXXXX-X o 11 dígitos juntos
-  const cuitPattern = /\b(20|23|24|27|30|33|34)[- ]?\d{8}[- ]?\d\b|\b\d{11}\b/g;
-  const cuitMatches = (raw.match(cuitPattern) || []).map(c => c.replace(/\D/g, '')).filter(c => c.length === 11);
+  // CUIT consecuente de Razón Social / Emisor
+  const cuitOrigenBlockMatch = raw.match(/(?:raz[oó]n\s*social|nombre\s*emisor|titular\s*origen)[\s\S]*?cuit\s*[:=\-]?\s*[\r\n]*\s*(\b\d{11}\b|\b\d{2}[- ]\d{8}[- ]\d\b)/i);
+  if (cuitOrigenBlockMatch) {
+    result.origenCuit = formatCuit(cuitOrigenBlockMatch[1]);
+  }
   
-  // 3. Extraer Monto ($)
-  // Busca patrones como $ 150.000,00 | $150000 | Monto: 150000 | Importe: 45.000 | 125000 ARS
-  const montoRegex = /(?:monto|importe|total|pesos|\$|ars|transf(?:iri[oó]|erencia)?\s*(?:de)?)\s*[:=\-]?\s*\$?\s*([\d\.\,]+)/i;
-  const montoMatch = raw.match(montoRegex);
-  if (montoMatch && montoMatch[1]) {
-    result.monto = formatCurrency(montoMatch[1]);
-  } else {
-    // Si hay un número con símbolo de pesos suelto
-    const looseMonto = raw.match(/\$\s*([\d\.\,]+)/);
-    if (looseMonto && looseMonto[1]) {
-      result.monto = formatCurrency(looseMonto[1]);
+  // 2. Extraer Titular de cuenta destino / Destinatario
+  const destNomRegex = /(?:titular\s*(?:de\s*cuenta\s*)?destino|destinatario|receptor|nombre\s*destino)\s*[:=\-]?\s*[\r\n]+\s*([^\r\n]+)|(?:titular\s*(?:de\s*cuenta\s*)?destino|destinatario|receptor|nombre\s*destino)\s*[:=\-]\s*([^\r\n]+)/i;
+  const destNomMatch = raw.match(destNomRegex);
+  if (destNomMatch) {
+    result.destinoNombre = cleanName(destNomMatch[1] || destNomMatch[2]);
+  }
+  
+  // 3. Extraer "Descripción:" como fallback para titular de destino si aún no se definió
+  const descMatch = raw.match(/(?:descripci[oó]n|concepto)\s*[:=\-]?\s*[\r\n]+\s*([^\r\n]+)|(?:descripci[oó]n|concepto)\s*[:=\-]\s*([^\r\n]+)/i);
+  if (descMatch && !result.destinoNombre) {
+    result.destinoNombre = cleanName(descMatch[1] || descMatch[2]);
+  }
+  
+  // Fallback si viene "Comercio vendedor" y no se detectó emisor
+  if (!result.origenNombre) {
+    const cvMatch = raw.match(/comercio\s*vendedor\s*[:=\-]?\s*[\r\n]*\s*([^\r\n]+)/i);
+    if (cvMatch && cvMatch[1]) {
+      result.origenNombre = cleanName(cvMatch[1]);
     }
   }
   
-  // 4. Extraer ID COELSA / ID Externo
-  // El usuario indica que 'ID externo' se refiere al ID COELSA (alfanumérico o numérico de 22 caracteres)
-  const coelsaRegex = /(?:id\s*externo|id_externo|externo|id\s*coelsa|coelsa|id\s*transacci[oó]n|transacci[oó]n|c[oó]digo|id)[:=\-\s]+([A-Za-z0-9_\-]{8,25})/i;
+  // 4. CVUs: Diferenciar "CVU" (emisor) de "CVU/CBU" (destino)
+  // Caso A: CVU / CBU explícito para destino (multilínea o misma línea)
+  const cvuDestRegex = /(?:cvu\s*\/\s*cbu|cbu\s*\/\s*cvu|cbu|cuenta\s*destino|cvu\s*destino)\s*[:=\-]?\s*[\r\n]*\s*(\b\d{22}\b)/i;
+  const cvuDestMatch = raw.match(cvuDestRegex);
+  if (cvuDestMatch) {
+    result.destinoCvu = cvuDestMatch[1];
+  }
+  
+  // Caso B: CVU sólo (Emisor), sin CBU y sin destino
+  const cvuOrigRegex = /(?:^|[\r\n])\s*cvu(?!\s*[\/|\\]|\s*cbu)\s*[:=\-]?\s*[\r\n]*\s*(\b\d{22}\b)/i;
+  const cvuOrigMatch = raw.match(cvuOrigRegex);
+  if (cvuOrigMatch) {
+    result.origenCvu = cvuOrigMatch[1];
+  }
+  
+  // 5. CUITs / CUILs:
+  const cuitDestRegex = /(?:cuil\s*\/\s*cuit|cuit\s*\/\s*cuil|cuit\s*destino|cuil\s*destino)\s*[:=\-]?\s*[\r\n]*\s*(\b\d{11}\b|\b\d{2}[- ]\d{8}[- ]\d\b)/i;
+  const cuitDestMatch = raw.match(cuitDestRegex);
+  if (cuitDestMatch) {
+    result.destinoCuit = formatCuit(cuitDestMatch[1]);
+  }
+  
+  // 6. Extraer ID Externo / COELSA
+  const coelsaRegex = /(?:id\s*externo|id_externo|id\s*coelsa|coelsa|id\s*transacci[oó]n|n[°º]\s*de\s*coelsa)\s*[:=\-]?\s*[\r\n]*\s*([A-Za-z0-9_\-]{8,35})/i;
   const coelsaMatch = raw.match(coelsaRegex);
   if (coelsaMatch && coelsaMatch[1]) {
     result.idCoelsa = coelsaMatch[1].trim();
-  } else {
-    // Buscar si hay tokens alfanuméricos de 22 caracteres (letras y números)
-    const all22 = raw.match(/\b[A-Za-z0-9]{22}\b/g) || [];
-    const nonCvuCandidate = all22.find(c => !cvuMatches.includes(c));
-    if (nonCvuCandidate) {
-      result.idCoelsa = nonCvuCandidate;
-    } else if (cvuMatches.length > 2) {
-      // Si se ingresan 3 secuencias de 22 dígitos, la 3ra seguramente es el ID COELSA
-      result.idCoelsa = cvuMatches[2];
-    } else {
-      // Buscar si hay un número largo de 15 a 25 dígitos que no sea el CVU
-      const longNumMatches = raw.match(/\b\d{15,25}\b/g) || [];
-      const candidate = longNumMatches.find(n => !cvuMatches.includes(n));
-      if (candidate) {
-        result.idCoelsa = candidate;
-      }
-    }
   }
   
-  // 5. Extraer Fecha y Hora
-  const dateRegex = /(\b\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}(?:\s*(?:a\s*las\s*)?[-–—@]?\s*\d{1,2}:\d{2}(?::\d{2})?(?:\s*(?:hs|hrs|am|pm))?)?)/i;
-  const dateMatch = raw.match(dateRegex);
-  if (dateMatch && dateMatch[1]) {
-    let dStr = dateMatch[1].trim();
+  // 7. Extraer Fecha y Hora
+  const dateNumRegex = /(?:fecha|fecha\s*y\s*hora)\s*[:=\-]?\s*[\r\n]*\s*(\b\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}(?:\s*(?:a\s*las\s*)?[-–—@]?\s*\d{1,2}:\d{2}(?::\d{2})?(?:\s*(?:hs|hrs|am|pm))?)?)/i;
+  const dateNumMatch = raw.match(dateNumRegex);
+  if (dateNumMatch && dateNumMatch[1]) {
+    let dStr = dateNumMatch[1].trim();
     if (!/hs|hrs|am|pm/i.test(dStr) && /\d{1,2}:\d{2}/.test(dStr)) {
       dStr += ' hs';
     }
     result.fechaHora = dStr;
+  } else {
+    const parsedSpanishDate = parseSpanishDate(raw);
+    if (parsedSpanishDate) {
+      result.fechaHora = parsedSpanishDate;
+    }
   }
   
-  // 6. Clasificar Origen y Destino por etiquetas o líneas
-  // Primero buscamos líneas o secciones con palabras clave 'origen' / 'de' y 'destino' / 'para' / 'a'
-  lines.forEach(line => {
-    const l = line.toLowerCase();
-    
-    // Titular / Nombre Origen (convertido a mayúsculas)
-    if (/^(?:titular\s*origen|nombre\s*origen|originante|de|emisor)[:=\-\s]+(.+)$/i.test(line)) {
-      const match = line.match(/^(?:titular\s*origen|nombre\s*origen|originante|de|emisor)[:=\-\s]+(.+)$/i);
-      if (match && match[1]) result.origenNombre = cleanName(match[1]);
-    } else if (l.includes('origen') && /titular|nombre/i.test(line)) {
-      const match = line.match(/(?:titular|nombre)[^:]*[:=\-\s]+([^,\n\r]+)/i);
-      if (match && match[1]) result.origenNombre = cleanName(match[1]);
+  // 8. Extraer Monto
+  const brutoMatch = raw.match(/(?:bruto)\s*[:=\-]?\s*\$?\s*([\d\.\,]+)/i);
+  if (brutoMatch && brutoMatch[1]) {
+    result.monto = formatCurrency(brutoMatch[1]);
+  } else {
+    const montoRegex = /(?:monto|importe|total|transf(?:iri[oó]|erencia)?\s*(?:de)?)\s*[:=\-]?\s*\$?\s*[-–—]?\s*\$?\s*([\d\.\,]+)/i;
+    const montoMatch = raw.match(montoRegex);
+    if (montoMatch && montoMatch[1]) {
+      result.monto = formatCurrency(montoMatch[1]);
+    } else {
+      const looseMonto = raw.match(/(?:^|[\r\n])\s*\$\s*[-–—]?\s*([\d\.\,]+)/m);
+      if (looseMonto && looseMonto[1]) {
+        result.monto = formatCurrency(looseMonto[1]);
+      }
     }
-    
-    // Titular / Nombre Destino (convertido a mayúsculas)
-    if (/^(?:titular\s*destino|nombre\s*destino|destinatario|para|receptor|hacia)[:=\-\s]+(.+)$/i.test(line)) {
-      const match = line.match(/^(?:titular\s*destino|nombre\s*destino|destinatario|para|receptor|hacia)[:=\-\s]+(.+)$/i);
-      if (match && match[1]) result.destinoNombre = cleanName(match[1]);
-    } else if (l.includes('destino') && /titular|nombre/i.test(line)) {
-      const match = line.match(/(?:titular|nombre)[^:]*[:=\-\s]+([^,\n\r]+)/i);
-      if (match && match[1]) result.destinoNombre = cleanName(match[1]);
-    }
-    
-    // ID Externo / COELSA explícito en la línea
-    if (/(?:id\s*externo|id_externo|externo|id\s*coelsa|coelsa)/i.test(line)) {
-      const match = line.match(/(?:id\s*externo|id_externo|externo|id\s*coelsa|coelsa|id\s*transacci[oó]n)[:=\-\s]+([A-Za-z0-9_\-]{8,25})/i);
-      if (match && match[1]) result.idCoelsa = match[1].trim();
-    }
-    
-    // CVU explícito por línea
-    if (/cvu.*origen|origen.*cvu|cuenta.*origen/i.test(line)) {
-      const m = line.match(/\b\d{22}\b/);
-      if (m) result.origenCvu = m[0];
-    }
-    if (/cvu.*destino|destino.*cvu|cuenta.*destino/i.test(line)) {
-      const m = line.match(/\b\d{22}\b/);
-      if (m) result.destinoCvu = m[0];
-    }
-    
-    // CUIT explícito por línea
-    if (/cuit.*origen|origen.*cuit|cuil.*origen/i.test(line)) {
-      const m = line.match(/\b(20|23|24|27|30|33|34)[- ]?\d{8}[- ]?\d\b|\b\d{11}\b/);
-      if (m) result.origenCuit = formatCuit(m[0]);
-    }
-    if (/cuit.*destino|destino.*cuit|cuil.*destino/i.test(line)) {
-      const m = line.match(/\b(20|23|24|27|30|33|34)[- ]?\d{8}[- ]?\d\b|\b\d{11}\b/);
-      if (m) result.destinoCuit = formatCuit(m[0]);
-    }
-  });
-  
-  // 7. Si no se asignaron CVUs explícitamente, usar el orden de aparición
-  if (!result.origenCvu && cvuMatches.length > 0) {
-    result.origenCvu = cvuMatches[0];
-  }
-  if (!result.destinoCvu && cvuMatches.length > 1) {
-    result.destinoCvu = cvuMatches[1];
   }
   
-  // 8. Si no se asignaron CUITs explícitamente, usar el orden de aparición
-  if (!result.origenCuit && cuitMatches.length > 0) {
-    result.origenCuit = formatCuit(cuitMatches[0]);
+  // 9. Nombres informales (ej: "de Juan Carlos Rodriguez ... a Maria Alvarez")
+  if (!result.origenNombre) {
+    const deMatch = raw.match(/(?:^|[\r\n\s])de\s+([A-Za-zÁÉÍÓÚáéíóúñÑ\s]{3,35})\s+(?:cuit|cuil|cvu|cbu)/i);
+    if (deMatch) result.origenNombre = cleanName(deMatch[1]);
   }
-  if (!result.destinoCuit && cuitMatches.length > 1) {
-    result.destinoCuit = formatCuit(cuitMatches[1]);
+  if (!result.destinoNombre) {
+    const aMatch = raw.match(/(?:^|[\r\n\s])(?:a|para|hacia)\s+([A-Za-zÁÉÍÓÚáéíóúñÑ\s]{3,35})\s+(?:cuit|cuil|cvu|cbu)/i);
+    if (aMatch) result.destinoNombre = cleanName(aMatch[1]);
   }
-  
-  // 9. Si faltan nombres, inferir nombres de personas o empresas en el texto
   if (!result.origenNombre || !result.destinoNombre) {
-    inferNames(raw, result);
+    const deParaPattern = /(?:desde|de)\s+([A-Za-zÁÉÍÓÚáéíóúñÑ\s]{3,35})\s+(?:hacia|para|a)\s+([A-Za-zÁÉÍÓÚáéíóúñÑ\s]{3,35})/i;
+    const match = raw.match(deParaPattern);
+    if (match) {
+      if (!result.origenNombre) result.origenNombre = cleanName(match[1]);
+      if (!result.destinoNombre) result.destinoNombre = cleanName(match[2]);
+    }
+  }
+
+  // Fallbacks para CVUs si faltó alguno
+  const allCvus = raw.match(/\b\d{22}\b/g) || [];
+  if (!result.origenCvu && !result.destinoCvu) {
+    if (allCvus.length >= 1) result.origenCvu = allCvus[0];
+    if (allCvus.length >= 2) result.destinoCvu = allCvus[1];
+  } else if (result.origenCvu && !result.destinoCvu) {
+    const candidateDest = allCvus.find(c => c !== result.origenCvu);
+    if (candidateDest) result.destinoCvu = candidateDest;
+  } else if (!result.origenCvu && result.destinoCvu) {
+    const candidateOrig = allCvus.find(c => c !== result.destinoCvu);
+    if (candidateOrig) result.origenCvu = candidateOrig;
+  }
+  
+  // Fallbacks para CUITs si faltó alguno
+  const cuitPattern = /\b(20|23|24|27|30|33|34)[- ]?\d{8}[- ]?\d\b|\b\d{11}\b/g;
+  const allCuits = (raw.match(cuitPattern) || []).map(c => c.replace(/\D/g, '')).filter(c => c.length === 11);
+  if (!result.origenCuit && !result.destinoCuit) {
+    if (allCuits.length >= 1) result.origenCuit = formatCuit(allCuits[0]);
+    if (allCuits.length >= 2) result.destinoCuit = formatCuit(allCuits[1]);
+  } else if (result.origenCuit && !result.destinoCuit) {
+    const cleanOrig = result.origenCuit.replace(/\D/g, '');
+    const candidateDest = allCuits.find(c => c !== cleanOrig);
+    if (candidateDest) result.destinoCuit = formatCuit(candidateDest);
+  } else if (!result.origenCuit && result.destinoCuit) {
+    const cleanDest = result.destinoCuit.replace(/\D/g, '');
+    const candidateOrig = allCuits.find(c => c !== cleanDest);
+    if (candidateOrig) result.origenCuit = formatCuit(candidateOrig);
   }
   
   return result;
@@ -307,23 +333,12 @@ function parseUnstructuredText(text) {
  * Limpia un nombre extraído para remover etiquetas o números residuales y convertirlo a MAYÚSCULAS
  */
 function cleanName(rawName) {
-  let name = rawName.replace(/(?:cuit|cuil|cvu|cbu|monto|fecha|coelsa|id|externo)[\s\S]*/i, '');
+  if (!rawName) return '';
+  let name = rawName.split(/\r?\n/)[0];
+  name = name.replace(/(?:cuit|cuil|cvu|cbu|monto|fecha|coelsa|id|externo|bruto|arancel)[\s\S]*/i, '');
   name = name.replace(/[;,\(\)\{\}\[\]\<\>]/g, ' ');
   name = name.replace(/\s+/g, ' ').trim();
   return name.toUpperCase();
-}
-
-/**
- * Infiere nombres si no tenían etiquetas estrictas
- */
-function inferNames(raw, result) {
-  // Patrón "de [Nombre] ... para [Nombre]" o "[Nombre] transfirió a [Nombre]"
-  const deParaPattern = /(?:desde|de)\s+([A-Za-zÁÉÍÓÚáéíóúñÑ\s]{3,35})\s+(?:hacia|para|a)\s+([A-Za-zÁÉÍÓÚáéíóúñÑ\s]{3,35})/i;
-  const match = raw.match(deParaPattern);
-  if (match) {
-    if (!result.origenNombre) result.origenNombre = cleanName(match[1]);
-    if (!result.destinoNombre) result.destinoNombre = cleanName(match[2]);
-  }
 }
 
 /**
@@ -343,18 +358,6 @@ function populateForm(data) {
   if (data.monto) { el.monto.value = data.monto; highlight(el.monto); fieldsCount++; }
   if (data.fechaHora) { el.fechaHora.value = data.fechaHora; highlight(el.fechaHora); fieldsCount++; }
   if (data.idCoelsa) { el.idCoelsa.value = data.idCoelsa; highlight(el.idCoelsa); fieldsCount++; }
-  
-  // Si no se detectó fecha u hora, sugerir la actual
-  if (!el.fechaHora.value.trim()) {
-    el.fechaHora.value = getCurrentDateTimeString();
-    highlight(el.fechaHora);
-  }
-  
-  // Si no se detectó ID Coelsa, sugerir uno
-  if (!el.idCoelsa.value.trim()) {
-    el.idCoelsa.value = generateCoelsaId();
-    highlight(el.idCoelsa);
-  }
   
   updateCounters();
   renderComprobante();
@@ -417,27 +420,6 @@ function swapOriginDestination() {
 }
 
 /**
- * Carga un ejemplo realista de prueba
- */
-function loadMockExample() {
-  const mockText = `Comprobante de Transferencia Inmediata
-Monto: $ 185.450,00
-Fecha: ${getCurrentDateTimeString()}
-Titular Origen: JUAN CARLOS RODRÍGUEZ
-CUIT Origen: 20-33445566-7
-CVU Origen: 0000003100019283746501
-Titular Destino: MARÍA BELÉN ÁLVAREZ
-CUIT Destino: 27-41029384-5
-CVU Destino: 0000004400083920194827
-ID COELSA: ${generateCoelsaId()}`;
-
-  el.rawInput.value = mockText;
-  const parsed = parseUnstructuredText(mockText);
-  populateForm(parsed);
-  showToast('Datos de ejemplo cargados');
-}
-
-/**
  * Limpia el formulario
  */
 function clearAll() {
@@ -449,8 +431,8 @@ function clearAll() {
   el.destinoCuit.value = '';
   el.destinoCvu.value = '';
   el.monto.value = '';
-  el.fechaHora.value = getCurrentDateTimeString();
-  el.idCoelsa.value = generateCoelsaId();
+  el.fechaHora.value = '';
+  el.idCoelsa.value = '';
   el.parseStatusMsg.style.display = 'none';
   updateCounters();
   renderComprobante();
@@ -567,7 +549,7 @@ function renderComprobante() {
   ctx.fillText(montoVal, heroCenterX, 300);
   
   // Fecha y hora
-  const fechaVal = el.fechaHora.value.trim() || getCurrentDateTimeString();
+  const fechaVal = el.fechaHora.value.trim() || '-';
   ctx.font = '500 13px "Public Sans", sans-serif';
   ctx.fillStyle = '#666677';
   ctx.fillText(fechaVal, heroCenterX, 334);
@@ -667,7 +649,7 @@ function renderComprobante() {
   ctx.fillText('DETALLES DE LA OPERACIÓN', boxX + 22, boxY + 344);
   ctx.letterSpacing = '0px';
   
-  const idCoelsaVal = el.idCoelsa.value.trim() || 'COELSA-0000000000000000';
+  const idCoelsaVal = el.idCoelsa.value.trim() || '-';
   
   ctx.font = '500 13px "Public Sans", sans-serif';
   ctx.fillStyle = '#777788';
@@ -730,9 +712,10 @@ function downloadReceiptPng() {
   const canvas = el.receiptCanvas;
   if (!canvas) return;
   
-  const idCoelsa = (el.idCoelsa.value.trim() || 'COELSA').replace(/[^a-zA-Z0-9_-]/g, '');
+  const idCoelsa = el.idCoelsa.value.trim().replace(/[^a-zA-Z0-9_-]/g, '');
   const titularDestino = (el.destinoNombre.value.trim() || 'usuario').replace(/[^a-zA-Z0-9]/g, '_');
-  const filename = `Comprobante-BezzaPay-${titularDestino}-${idCoelsa.slice(-8)}.png`;
+  const suffix = idCoelsa ? idCoelsa.slice(-8) : Date.now().toString().slice(-8);
+  const filename = `Comprobante-BezzaPay-${titularDestino}-${suffix}.png`;
   
   const link = document.createElement('a');
   link.download = filename;
@@ -922,19 +905,8 @@ function initEvents() {
 
 // Inicialización general
 document.addEventListener('DOMContentLoaded', () => {
-  // Inicializar fecha y hora actual por defecto
-  if (!el.fechaHora.value) {
-    el.fechaHora.value = getCurrentDateTimeString();
-  }
-  // Inicializar ID Coelsa por defecto
-  if (!el.idCoelsa.value) {
-    el.idCoelsa.value = generateCoelsaId();
-  }
-  
   initEvents();
   loadLogo();
   updateCounters();
-  
-  // Cargar ejemplo inicial para que la vista previa nazca llena y atractiva
-  loadMockExample();
+  renderComprobante();
 });
