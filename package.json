@@ -2,13 +2,13 @@
   "name": "reporteria-sircreb-bot",
   "version": "1.0.0",
   "description": "Bot y API de consulta automatizada de alícuotas SIRTAC, SIRCREB y SIRCUPA para Reportería Bezza Pay",
-  "main": "sircreb-server.js",
+  "main": "server/sircreb-server.js",
   "type": "module",
   "scripts": {
-    "start": "node sircreb-server.js",
-    "dev": "node sircreb-server.js",
-    "host": "node start-host.js",
-    "bot": "node sircreb-server.js"
+    "start": "node server/sircreb-server.js",
+    "dev": "node server/sircreb-server.js",
+    "host": "node server/start-host.js",
+    "bot": "node server/sircreb-server.js"
   },
   "keywords": [
     "sircreb",

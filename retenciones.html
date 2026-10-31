@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Comprobante de Retenciones IIBB | Bezza Pay</title>
+    <meta name="description" content="Generador de constancias mensuales de retenciones de Ingresos Brutos (IIBB) sobre ventas acreditadas Bezza Pay." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="css/style.css?v=3" />
+    <link rel="stylesheet" href="css/comprobantes.css?v=2" />
+    <link rel="stylesheet" href="css/retenciones.css?v=1" />
+    <link rel="shortcut icon" href="assets/Logo.png?v=2" type="image/png" />
+  </head>
+  <body>
+    <!-- ENCABEZADO OFICIAL BEZZA PAY -->
+    <header class="header" role="banner">
+      <div class="header__inner">
+        <div class="header__left">
+          <a href="index.html" class="header__brand" id="headerBrand" title="Bezza Pay - Menú Principal" aria-label="Bezza Pay">
+            <img src="assets/BezzaPaySVG.svg" alt="Bezza Pay" class="header__logo" />
+          </a>
+          <nav class="header__nav" aria-label="Navegación principal">
+            <a href="index.html" class="header__nav-link" id="navReporteria">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+                <polyline points="10 9 9 9 8 9"></polyline>
+              </svg>
+              <span class="nav-text">Reportería</span>
+            </a>
+            <a href="comprobantes.html" class="header__nav-link" id="navComprobantes">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="4" width="20" height="16" rx="2"></rect>
+                <line x1="6" y1="9" x2="18" y2="9"></line>
+                <line x1="6" y1="13" x2="14" y2="13"></line>
+                <line x1="6" y1="17" x2="10" y2="17"></line>
+              </svg>
+              <span class="nav-text">Comprobantes</span>
+            </a>
+            <a href="retenciones.html" class="header__nav-link active" id="navRetenciones">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="19" y1="5" x2="5" y2="19"></line>
+                <circle cx="6.5" cy="6.5" r="2.5"></circle>
+                <circle cx="17.5" cy="17.5" r="2.5"></circle>
+              </svg>
+              <span class="nav-text">Retenciones</span>
+            </a>
+          </nav>
+        </div>
+        <div class="header__badge">
+          <span class="badge badge--internal">Solo uso Interno</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- CONTENIDO PRINCIPAL -->
+    <main class="main" id="main-content">
+      <div class="retenciones-layout">
+
+        <!-- ENCABEZADO DE SECCIÓN -->
+        <div class="comprobantes-header">
+          <h1 class="comprobantes-title">
+            <span>Comprobantes de</span>
+            <span class="comprobantes-title-gradient">Retenciones IIBB</span>
+          </h1>
+        </div>
+
+        <!-- CONTENEDOR PRINCIPAL CON ARRASTRE GLOBAL -->
+        <div class="ret-card-container" id="retCardContainer">
+
+          <!-- OVERLAY DE ARRASTRE -->
+          <div class="card-drag-overlay" id="retDragOverlay" aria-hidden="true">
+            <div class="card-drag-overlay__content">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="17 8 12 3 7 8"></polyline>
+                <line x1="12" y1="3" x2="12" y2="15"></line>
+              </svg>
+              <p class="card-drag-overlay__title">Soltá tu reporte XLSX acá</p>
+              <p class="card-drag-overlay__sub">para generar las constancias mensuales de Retenciones IIBB</p>
+            </div>
+          </div>
+
+          <!-- ESTADO 1: ZONA DE CARGA INICIAL -->
+          <div class="ret-state" id="retStateIdle">
+            <div class="processor-card ret-upload-card">
+              <div class="state state--idle">
+
+                <!-- SWITCH OPCIONAL: INCLUIR MES EN CURSO -->
+                <div class="toggle-card" id="includeCurrentMonthCard">
+                  <label class="toggle-control" for="includeCurrentMonthToggle">
+                    <input type="checkbox" id="includeCurrentMonthToggle" class="toggle-control__input" />
+                    <span class="toggle-control__switch"></span>
+                    <span class="toggle-control__content">
+                      <span class="toggle-control__title">Incluir mes en curso (aún no finalizado)</span>
+                      <span class="toggle-control__desc">Por defecto solo se emiten constancias de meses completos cerrados (del primer al último día del mes)</span>
+                    </span>
+                  </label>
+                </div>
+
+                <!-- DROPZONE -->
+                <div class="dropzone" id="retDropzone" role="button" tabindex="0"
+                  aria-label="Arrastrar y soltar reporte XLSX con retenciones acá, o hacer clic para seleccionar">
+                  <div class="dropzone__rings" aria-hidden="true">
+                    <div class="ring ring--1"></div>
+                    <div class="ring ring--2"></div>
+                    <div class="ring ring--3"></div>
+                  </div>
+                  <div class="dropzone__icon-wrap" aria-hidden="true">
+                    <svg class="dropzone__icon" viewBox="0 0 64 64" fill="none">
+                      <rect x="8" y="8" width="48" height="48" rx="12" fill="url(#grad-ret-icon)" opacity="0.12"/>
+                      <path d="M32 20V40M32 20L25 27M32 20L39 27" stroke="url(#grad-ret-icon2)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                      <path d="M20 44H44" stroke="url(#grad-ret-icon2)" stroke-width="2.5" stroke-linecap="round"/>
+                      <path d="M14 36C14 36 14 44 20 44" stroke="url(#grad-ret-icon2)" stroke-width="2.5" stroke-linecap="round"/>
+                      <path d="M50 36C50 36 50 44 44 44" stroke="url(#grad-ret-icon2)" stroke-width="2.5" stroke-linecap="round"/>
+                      <defs>
+                        <linearGradient id="grad-ret-icon" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+                          <stop stop-color="#c514a7"/><stop offset="1" stop-color="#f20027"/>
+                        </linearGradient>
+                        <linearGradient id="grad-ret-icon2" x1="14" y1="20" x2="50" y2="44" gradientUnits="userSpaceOnUse">
+                          <stop stop-color="#c514a7"/><stop offset="1" stop-color="#f20027"/>
+                        </linearGradient>
+                      </defs>
+                    </svg>
+                  </div>
+                  <div class="dropzone__text">
+                    <p class="dropzone__title">Arrastrá el reporte XLSX con Retenciones acá</p>
+                    <p class="dropzone__subtitle">o hacé clic para seleccionar el archivo descargado de Reportería</p>
+                  </div>
+                  <input type="file" id="retFileInput" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    class="dropzone__input" aria-hidden="true" tabindex="-1" />
+                </div>
+
+              </div>
+            </div>
+          </div>
+
+          <!-- ESTADO 2: RESULTADOS Y VISTAS PREVIAS MENSUALES -->
+          <div class="ret-state" id="retStateResults" hidden>
+
+            <!-- BARRA SUPERIOR DE DATOS Y ACCIONES GLOBALES -->
+            <div class="comp-card ret-toolbar-card">
+              <div class="ret-toolbar-top">
+                <div class="ret-merchant-inputs">
+                  <div class="form-group">
+                    <label for="retRazonSocial" class="form-label">Razón Social / Titular</label>
+                    <input type="text" id="retRazonSocial" class="form-input" placeholder="Ej: CHIRINGUITO BISTRO" />
+                  </div>
+                  <div class="form-group">
+                    <label for="retCuit" class="form-label">CUIT / CUIL</label>
+                    <input type="text" id="retCuit" class="form-input" placeholder="XX-XXXXXXXX-X" maxlength="14" />
+                  </div>
+                </div>
+
+                <div class="ret-global-actions">
+                  <button type="button" id="btnDownloadAllPdf" class="btn-comp btn-comp--primary">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                      <polyline points="14 2 14 8 20 8"></polyline>
+                      <path d="M12 17v-6M9.5 14.5L12 17l2.5-2.5"></path>
+                    </svg>
+                    <span id="btnDownloadAllPdfText">Descargar PDF</span>
+                  </button>
+                  <button type="button" id="btnDownloadAllPng" class="btn-comp btn-comp--secondary">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                      <polyline points="7 10 12 15 17 10"></polyline>
+                      <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    <span id="btnDownloadAllPngText">Descargar PNG</span>
+                  </button>
+                  <button type="button" id="btnRetReset" class="btn-comp btn-comp--outline">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="1 4 1 10 7 10"></polyline>
+                      <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+                    </svg>
+                    <span>Subir otro archivo</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- BARRA INFERIOR: AVISO DE MES EN CURSO + SWITCH -->
+              <div class="ret-toolbar-bottom">
+                <div id="retOmittedNotice" class="ret-omitted-notice" hidden></div>
+                <label class="ret-inline-toggle" for="includeCurrentMonthToggleResults">
+                  <input type="checkbox" id="includeCurrentMonthToggleResults" class="toggle-control__input" />
+                  <span class="toggle-control__switch"></span>
+                  <span class="ret-inline-toggle__label">Incluir mes en curso</span>
+                </label>
+              </div>
+            </div>
+
+            <!-- ESTADO SIN MESES CERRADOS -->
+            <div id="retEmptyMonths" class="comp-card ret-empty-card" hidden>
+              <div class="ret-empty-card__inner">
+                <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#c514a7" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                  <line x1="16" y1="2" x2="16" y2="6"></line>
+                  <line x1="8" y1="2" x2="8" y2="6"></line>
+                  <line x1="3" y1="10" x2="21" y2="10"></line>
+                </svg>
+                <h3 class="ret-empty-card__title">No hay meses cerrados en este reporte</h3>
+                <p class="ret-empty-card__desc" id="retEmptyDesc">
+                  Las ventas acreditadas del archivo pertenecen al mes actual en curso. Activá la opción "Incluir mes en curso" si necesitás emitir una constancia parcial.
+                </p>
+              </div>
+            </div>
+
+            <!-- GRILLA DE CONSTANCIAS GENERADAS POR MES -->
+            <div id="retMonthsGrid" class="ret-months-grid"></div>
+
+          </div>
+
+        </div>
+
+      </div>
+    </main>
+
+    <!-- MODAL DE VISUALIZACIÓN EN TAMAÑO COMPLETO -->
+    <div id="retModal" class="comp-modal" aria-hidden="true">
+      <div class="comp-modal-content ret-modal-content">
+        <button type="button" id="retModalClose" class="comp-modal-close" aria-label="Cerrar modal">&times;</button>
+        <h3 id="retModalTitle" style="font-size: 18px; font-weight: 800; margin-bottom: 4px;">Vista Previa</h3>
+        <img id="retModalImg" class="comp-modal-img ret-modal-img" alt="Comprobante de Retenciones IIBB" />
+        <div style="display: flex; gap: 10px; margin-top: 8px; flex-wrap: wrap; justify-content: center;">
+          <button type="button" id="btnRetModalPdf" class="btn-comp btn-comp--primary">
+            <span>Descargar PDF</span>
+          </button>
+          <button type="button" id="btnRetModalPng" class="btn-comp btn-comp--secondary">
+            <span>Descargar PNG</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- TOAST NOTIFICACIÓN -->
+    <div id="retToast" class="comp-toast" role="status" aria-live="polite"></div>
+
+    <footer class="footer" role="contentinfo">
+      <p class="footer__text">
+        <span>Los archivos son procesados localmente en tu navegador. Ningún dato es enviado a servidores externos.</span>
+      </p>
+    </footer>
+
+    <!-- SCRIPTS -->
+    <script src="js/xlsx-style.js"></script>
+    <script>
+      if (typeof XLSX === "undefined") {
+        document.write('<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"><\/script>');
+      }
+    </script>
+    <script src="js/jspdf.umd.min.js"></script>
+    <script>
+      if (typeof window.jspdf === "undefined") {
+        document.write('<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"><\/script>');
+      }
+    </script>
+    <script src="js/jspdf-autotable.min.js"></script>
+    <script>
+      if (typeof window.jspdf === "undefined" || (window.jspdf.jsPDF && !window.jspdf.jsPDF.API.autoTable)) {
+        document.write('<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js"><\/script>');
+      }
+    </script>
+    <script src="js/retenciones.js?v=1"></script>
+  </body>
+</html>
+

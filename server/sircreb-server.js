@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import puppeteer from 'puppeteer-core';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
+const PROJECT_ROOT = join(__dirname, '..');
 
 /* =====================================================
    CONFIGURACIÓN Y DETECCIÓN DEL NAVEGADOR
@@ -673,8 +674,8 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // Servir archivos estáticos del procesador web (HTML, CSS, JS, imágenes)
-  let filePath = join(__dirname, pathname === '/' ? 'index.html' : pathname.replace(/^\//, ''));
+  // Servir archivos estáticos del procesador web (HTML, CSS, JS, imágenes) desde la raíz del proyecto
+  let filePath = join(PROJECT_ROOT, pathname === '/' ? 'index.html' : pathname.replace(/^\//, ''));
   if (!existsSync(filePath) && existsSync(filePath + '.html')) {
     filePath = filePath + '.html';
   }

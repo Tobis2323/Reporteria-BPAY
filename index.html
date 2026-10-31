@@ -8,16 +8,16 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="style.css?v=2" />
+    <link rel="stylesheet" href="css/style.css?v=2" />
     <!-- Logo de la página:-->
-    <link rel="shortcut icon" href="Logo.png?v=2" type="image/png" >
+    <link rel="shortcut icon" href="assets/Logo.png?v=2" type="image/png" >
   </head>
   <body>
     <header class="header" role="banner">
       <div class="header__inner">
         <div class="header__left">
           <a href="index.html" class="header__brand" id="headerBrand" title="Bezza Pay" aria-label="Bezza Pay">
-            <img src="BezzaPaySVG.svg" alt="Bezza Pay" class="header__logo" />
+            <img src="assets/BezzaPaySVG.svg" alt="Bezza Pay" class="header__logo" />
           </a>
           <nav class="header__nav" aria-label="Navegación principal">
             <a href="index.html" class="header__nav-link active" id="navReporteria">
@@ -38,6 +38,14 @@
                 <line x1="6" y1="17" x2="10" y2="17"></line>
               </svg>
               <span class="nav-text">Comprobantes</span>
+            </a>
+            <a href="retenciones.html" class="header__nav-link" id="navRetenciones">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="19" y1="5" x2="5" y2="19"></line>
+                <circle cx="6.5" cy="6.5" r="2.5"></circle>
+                <circle cx="17.5" cy="17.5" r="2.5"></circle>
+              </svg>
+              <span class="nav-text">Retenciones</span>
             </a>
           </nav>
         </div>
@@ -279,13 +287,23 @@
               <p class="success-subtitle">El archivo fue procesado con éxito y está listo para descargar.</p>
               <div class="success-meta" id="successMeta" aria-live="polite"></div>
               <div class="success-actions">
-                <button class="btn btn--download" id="downloadBtn" type="button" aria-label="Descargar el archivo Excel procesado">
-                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                    <path d="M10 3V13M10 13L6 9M10 13L14 9" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M3 15H17" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
-                  </svg>
-                  Descargar Reporte Procesado
-                </button>
+                <div class="download-btn-group">
+                  <button class="btn btn--download" id="downloadBtn" type="button" aria-label="Descargar el archivo Excel procesado">
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                      <path d="M10 3V13M10 13L6 9M10 13L14 9" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                      <path d="M3 15H17" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+                    </svg>
+                    Descargar Excel (.xlsx)
+                  </button>
+                  <button class="btn btn--download-pdf" id="downloadPdfBtn" type="button" aria-label="Descargar el reporte en formato PDF">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                      <polyline points="14 2 14 8 20 8" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                      <path d="M12 17v-6M9.5 14.5L12 17l2.5-2.5" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                    Descargar PDF (.pdf)
+                  </button>
+                </div>
                 <button class="btn btn--secondary" id="resetBtn" type="button" aria-label="Procesar otro archivo">
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                     <path d="M2 8C2 4.686 4.686 2 8 2C10.21 2 12.15 3.1 13.25 4.75M14 8C14 11.314 11.314 14 8 14C5.79 14 3.85 12.9 2.75 11.25" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
@@ -375,6 +393,8 @@
                 <li><span class="tag tag--deleted">Mensaje Respuesta</span><span class="tag-arrow">-></span><span class="tag tag--translated">Eliminada</span></li>
                 <li><span class="tag tag--deleted">Geolocalización</span><span class="tag-arrow">-></span><span class="tag tag--translated">Eliminada</span></li>
                 <li><span class="tag tag--deleted">Rubro</span><span class="tag-arrow">-></span><span class="tag tag--translated">Eliminada</span></li>
+                <li><span class="tag tag--deleted">Cordobesa</span><span class="tag-arrow">-></span><span class="tag tag--translated">Eliminada</span></li>
+                <li><span class="tag tag--deleted">Estado</span><span class="tag-arrow">-></span><span class="tag tag--translated">Eliminada</span></li>
               </ul>
             </div>
             <div class="info-card__subgroup" style="margin-top: 12px; padding-top: 12px; border-top: 1px dashed rgba(0,0,0,0.08);">
@@ -396,13 +416,25 @@
       </p>
     </footer>
 
-    <script src="xlsx-style.js"></script>
+    <script src="js/xlsx-style.js"></script>
     <script>
       if (typeof XLSX === "undefined" || !XLSX.style_version) {
         document.write('<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"><\/script>');
       }
     </script>
-    <script src="app.js?v=1788488003"></script>
+    <script src="js/jspdf.umd.min.js"></script>
+    <script>
+      if (typeof window.jspdf === "undefined") {
+        document.write('<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"><\/script>');
+      }
+    </script>
+    <script src="js/jspdf-autotable.min.js"></script>
+    <script>
+      if (typeof window.jspdf === "undefined" || (window.jspdf.jsPDF && !window.jspdf.jsPDF.API.autoTable)) {
+        document.write('<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js"><\/script>');
+      }
+    </script>
+    <script src="js/app.js?v=1788488007"></script>
   </body>
 </html>
 

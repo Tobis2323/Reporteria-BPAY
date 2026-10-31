@@ -112,6 +112,8 @@ const COLUMN_RENAMES = {
   "retencion iibb penalidad":             "Retencion IIBB Penalidad",
   "retencion ganancia":                   "Retencion Ganancias",
   "retencion ganancias":                  "Retencion Ganancias",
+  "monto neto":                           "Monto Neto",
+  "monto bruto":                          "Monto Bruto",
 };
 
 /**
@@ -134,6 +136,7 @@ const COLUMNS_TO_DELETE_MOVIMIENTOS = [
 // 5. Mensaje Respuesta
 // 6. Geolocalización
 // 7. Rubro
+// 8. Cordobesa
 const COLUMNS_TO_DELETE_TRANSACCIONES = [
   "comercio codigo",
   "codigo de comercio",
@@ -144,6 +147,10 @@ const COLUMNS_TO_DELETE_TRANSACCIONES = [
   "geolocalizacion",
   "rubro",
   "retencion iibb penalidad descripcion",
+  "cordobesa",
+  "es cordobesa",
+  "tarjeta cordobesa",
+  "estado",
 ];
 
 /**
@@ -203,9 +210,11 @@ const TOTAL_SUM_COLUMNS = [
 /* =====================================================
    SECCION 3: ESTADO GLOBAL DE LA APLICACION
    ===================================================== */
-let processedWorkbook  = null;
-let downloadFileName   = "Reporte_Movimientos.xlsx";
-let selectedReportMode = "auto"; // "auto" | "movimientos" | "transacciones"
+let processedWorkbook   = null;
+let processedReportMeta = null;
+let downloadFileName    = "Reporte_Movimientos.xlsx";
+let downloadPdfFileName = "Reporte_Movimientos.pdf";
+let selectedReportMode  = "auto"; // "auto" | "movimientos" | "transacciones"
 let selectedSistema    = "sirtac"; // "sirtac" (predeterminado) | "sircreb" | "sircupa"
 let selectedIibbMethod = "auto"; // "auto" (predeterminado) | "manual"
 let isBotOnline        = false;
@@ -257,6 +266,7 @@ const sisBtnSirtac        = document.getElementById("sisBtnSirtac");
 const sisBtnSircreb       = document.getElementById("sisBtnSircreb");
 const sisBtnSircupa       = document.getElementById("sisBtnSircupa");
 const downloadBtn         = document.getElementById("downloadBtn");
+const downloadPdfBtn      = document.getElementById("downloadPdfBtn");
 const resetBtn            = document.getElementById("resetBtn");
 const errorResetBtn       = document.getElementById("errorResetBtn");
 const errorMessage        = document.getElementById("errorMessage");
@@ -326,6 +336,7 @@ function setReportMode(mode = "auto") {
  */
 function reset() {
   processedWorkbook = null;
+  processedReportMeta = null;
   fileInput.value = "";
   successMeta.innerHTML = "";
   if (saldoToggle) saldoToggle.checked = false;
@@ -607,6 +618,10 @@ function applyColumnRenames(worksheet) {
       cell.v = newName;
       cell.w = newName;
       count++;
+    } else if (typeof cell.v === "string" && cell.v.includes("_")) {
+      const cleanedHeader = cell.v.replace(/_/g, " ").replace(/\s+/g, " ").trim();
+      cell.v = cleanedHeader;
+      cell.w = cleanedHeader;
     }
   }
 
@@ -2112,13 +2127,35 @@ async function processFile(file) {
     // Guardar el workbook procesado para descarga directa
     processedWorkbook = workbook;
 
-    // Nombre del archivo de salida
+    // Nombres de los archivos de salida (.xlsx y .pdf)
     const cuilSuffix = cuilValue ? `_${cuilValue}` : "";
     if (isTransacciones) {
-      downloadFileName = `Reporte_Transacciones${cuilSuffix}.xlsx`;
+      downloadFileName    = `Reporte_Transacciones${cuilSuffix}.xlsx`;
+      downloadPdfFileName = `Reporte_Transacciones${cuilSuffix}.pdf`;
     } else {
-      downloadFileName = `Reporte_Movimientos${cuilSuffix}.xlsx`;
+      downloadFileName    = `Reporte_Movimientos${cuilSuffix}.xlsx`;
+      downloadPdfFileName = `Reporte_Movimientos${cuilSuffix}.pdf`;
     }
+
+    // Extraer rango de fechas (período) y razón social/titular si existe en la hoja
+    const firstProcessedSheet = workbook.Sheets[workbook.SheetNames[0]];
+    const periodText = extractReportDateRange(firstProcessedSheet);
+    const sheetTitular = extractTitularFromSheet(firstProcessedSheet);
+    let detectedTitular = sheetTitular || botRazonSocial;
+    if (sheetTitular && botRazonSocial && normalizeString(sheetTitular) !== normalizeString(botRazonSocial)) {
+      detectedTitular = `${sheetTitular} (${botRazonSocial})`;
+    }
+
+    processedReportMeta = {
+      reportType: resolvedReportType,
+      isTransacciones,
+      cuilValue,
+      razonSocial: detectedTitular,
+      periodText,
+      originalFileName: file.name,
+      excelFileName: downloadFileName,
+      pdfFileName: downloadPdfFileName,
+    };
 
     const typeBadge = isTransacciones
       ? `<span class="badge badge--type-tx">Reporte de Transacciones</span>`
@@ -2220,7 +2257,7 @@ async function processFile(file) {
       </div>
       <div class="success-meta-row">
         <span class="success-meta-label">Descarga como:</span>
-        <span class="success-meta-value">${escapeHtml(downloadFileName)}</span>
+        <span class="success-meta-value">${escapeHtml(downloadFileName)} / .pdf</span>
       </div>
       <div class="success-meta-row">
         <span class="success-meta-label">Traducciones aplicadas:</span>
@@ -2298,6 +2335,765 @@ function downloadFile() {
   } catch (err) {
     console.error("[ReportePro] Error al descargar el archivo:", err);
     alert("No se pudo descargar el archivo automáticamente.\nError: " + err.message);
+  }
+}
+
+
+/* =====================================================
+   SECCION 7B: MOTOR DE EXPORTACION A PDF (ESTETICA BEZZA PAY)
+   ===================================================== */
+
+/**
+ * SVG Oficial de Bezza Pay incrustado en texto plano (libre de restricciones CORS).
+ */
+const BEZZA_PDF_LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 57.9">
+<style>
+  .st0{fill:#CAF14D;}
+  .st1{fill:#D00070;}
+</style>
+<g>
+  <path class="st0" d="M119.3,22.1h-8.5c0-7-5.6-12.6-12.6-12.7V0.9C109.9,1,119.3,10.4,119.3,22.1"/>
+  <path class="st1" d="M46.9,21c-0.9-1.7-2-3-3.4-3.9c-1.4-0.9-3-1.3-4.7-1.3c-2,0-3.7,0.4-5.2,1.3c-1.5,0.9-2.7,2.1-3.6,3.6c-0.9,1.5-1.3,3.3-1.3,5.3s0.4,3.7,1.3,5.3c0.8,1.5,2,2.7,3.5,3.6c1.5,0.9,3.2,1.3,5.1,1.3c1.5,0,2.9-0.2,4.1-0.6c1.2-0.4,2.2-1,3.1-1.8c0.9-0.8,1.6-1.7,2.1-2.8L43.1,29c-0.4,0.7-0.9,1.3-1.5,1.8c-0.7,0.5-1.5,0.7-2.6,0.7c-1.2,0-2.4-0.4-3.3-1.1c-1-0.8-1.5-1.8-1.7-3.1h14.2C48.1,24.8,47.7,22.7,46.9,21 M34.3,23.5c0.1-0.8,0.4-1.5,0.9-2c0.5-0.5,1-0.8,1.7-1.1c0.6-0.2,1.2-0.3,1.8-0.3c0.6,0,1.2,0.1,1.7,0.3c0.6,0.2,1.1,0.6,1.5,1.1c0.4,0.5,0.7,1.1,0.8,1.9L34.3,23.5L34.3,23.5z"/>
+  <polygon class="st1" points="67.7,19.9 68.4,16.2 52.4,16.2 51.7,20.5 61.2,20.5 49.8,31.9 49.2,35.6 65.1,35.6 65.8,31.4 56.3,31.4"/>
+  <polygon class="st1" points="69.4,20.5 78.9,20.5 67.5,31.9 66.8,35.6 82.8,35.6 83.5,31.4 74,31.4 85.4,19.9 86,16.2 70.1,16.2"/>
+  <path class="st1" d="M102.7,20.1c-0.6-1.4-1.6-2.4-2.9-3.1c-1.3-0.7-2.9-1.1-4.9-1.1c-1.6,0-3,0.2-4.1,0.7c-1.1,0.5-2,1.2-2.7,1.9c-0.7,0.8-1.2,1.6-1.6,2.4l4.5,1.5c0.5-0.7,1-1.3,1.7-1.7s1.4-0.5,2.2-0.5c1.1,0,1.9,0.3,2.4,1c0.6,0.6,0.9,1.5,1.1,2.7h-4.6c-2.5,0-4.4,0.5-5.8,1.6c-1.4,1-2.1,2.6-2.1,4.7c0,1.9,0.6,3.3,1.9,4.4c1.3,1,3.1,1.5,5.4,1.5c1.3,0,2.4-0.2,3.3-0.7c0.9-0.5,1.5-1.1,2-2v2.2h4.9V24.8C103.6,23,103.4,21.4,102.7,20.1 M98.6,27.8c0,0.7-0.2,1.3-0.6,1.9s-0.9,1.1-1.6,1.5c-0.7,0.4-1.4,0.6-2.2,0.6c-0.9,0-1.7-0.2-2.2-0.5c-0.5-0.3-0.8-0.8-0.8-1.3c0-0.7,0.3-1.3,1-1.7c0.6-0.4,1.8-0.6,3.5-0.6L98.6,27.8L98.6,27.8L98.6,27.8z"/>
+  <path class="st1" d="M23.2,21.4c1-0.6,1.7-1.4,2.2-2.3c0.5-0.9,0.8-1.9,0.8-2.9c0-1.7-0.4-3.1-1.2-4.3s-1.9-2-3.3-2.6c-1.4-0.6-3-0.9-4.9-0.9H6.2v8.9l3.5,2.2h-1H2.5H2.2L0,23.8h6.2v8.5c0,1.8,1.5,3.3,3.3,3.3h8.7c1.8,0,3.4-0.3,4.7-0.9c1.3-0.6,2.4-1.5,3.1-2.6c0.7-1.2,1.1-2.6,1.1-4.2c0-1.5-0.3-2.8-1-3.8C25.4,22.9,24.4,22.1,23.2,21.4 M11.3,12.7h5.2c1.3,0,2.3,0.3,3.1,0.9c0.7,0.6,1.1,1.4,1.1,2.5c0,1.1-0.3,1.9-1,2.5c-0.7,0.6-1.6,0.9-2.7,0.9h-5.7V12.7z M20.6,30c-0.7,0.6-1.7,1-3,1h-6.3v-7h5.9c1.4,0,2.5,0.3,3.3,1c0.8,0.6,1.2,1.5,1.2,2.6C21.7,28.5,21.3,29.3,20.6,30"/>
+  <path class="st1" d="M70.4,57l1.9-13.8h2.1l-0.2,1.7c0.2-0.3,0.5-0.6,0.8-0.9c0.3-0.3,0.7-0.6,1.2-0.7c0.5-0.2,1-0.3,1.5-0.3c0.8,0,1.5,0.2,2,0.6c0.5,0.4,1,1,1.2,1.8c0.2,0.8,0.3,1.8,0.1,3c-0.2,1.2-0.5,2.2-0.9,3.1c-0.5,0.8-1,1.4-1.7,1.9c-0.7,0.4-1.5,0.6-2.3,0.6c-0.4,0-0.8-0.1-1.1-0.2c-0.3-0.1-0.6-0.3-0.8-0.5c-0.2-0.2-0.4-0.4-0.6-0.7c-0.1-0.2-0.3-0.5-0.4-0.7L72.5,57L70.4,57L70.4,57z M75.8,52.3c0.8,0,1.4-0.3,2-0.9s1-1.6,1.1-2.9c0.2-1.2,0-2.1-0.3-2.7c-0.4-0.7-1-1-1.8-1c-0.9,0-1.6,0.3-2.1,1c-0.5,0.7-0.9,1.6-1,2.7c-0.1,0.7-0.1,1.4,0,1.9c0.1,0.6,0.3,1.1,0.7,1.4C74.8,52.1,75.2,52.3,75.8,52.3z"/>
+  <path class="st1" d="M85.4,53.9c-0.6,0-1.2-0.1-1.7-0.4c-0.5-0.2-0.8-0.6-1-1.1c-0.2-0.5-0.3-1-0.2-1.7c0.2-1.2,0.7-2,1.6-2.6c0.9-0.6,2.2-0.9,3.9-0.9l1.6,0l0.1-0.8c0.1-0.6,0-1.1-0.4-1.4c-0.3-0.3-0.8-0.5-1.4-0.5c-0.5,0-1,0.1-1.5,0.4c-0.5,0.3-0.8,0.7-1,1.2h-1.8c0.1-0.6,0.4-1.2,0.8-1.7c0.4-0.5,1-0.9,1.6-1.1c0.7-0.3,1.4-0.4,2.2-0.4c0.9,0,1.7,0.1,2.2,0.4c0.5,0.3,1,0.7,1.2,1.2c0.2,0.5,0.3,1.1,0.2,1.8l-1.1,7.4h-1.8l0.1-1.9c-0.5,0.8-1,1.4-1.7,1.6C86.8,53.8,86.1,53.9,85.4,53.9z M86.3,52.4c0.3,0,0.6-0.1,0.9-0.2c0.3-0.1,0.6-0.3,0.9-0.5c0.3-0.2,0.5-0.4,0.7-0.7c0.2-0.3,0.3-0.5,0.3-0.8l0.2-1.7l-1.3,0c-0.7,0-1.3,0.1-1.7,0.2c-0.5,0.1-0.9,0.4-1.2,0.7c-0.3,0.3-0.5,0.7-0.6,1.2c-0.1,0.6,0,1,0.4,1.3C85.3,52.3,85.7,52.4,86.3,52.4z"/>
+  <path class="st1" d="M93.9,57.1c-0.6,0-1.2-0.1-1.6-0.3l0.2-1.4l1,0c0.5,0,0.9,0,1.2-0.1c0.3-0.1,0.5-0.3,0.7-0.5c0.1-0.2,0.3-0.4,0.3-0.5l0.4-0.9l-2.4-10.2h2.1l1.7,7.8l3.9-7.8h2.1l-5.8,11.1C97.4,55,97,55.6,96.5,56c-0.4,0.4-0.8,0.7-1.3,0.8C94.9,57,94.4,57.1,93.9,57.1z"/>
+</g>
+</svg>`;
+
+let cachedPdfLogoDataUrl = null;
+let cachedPdfGradientDataUrl = null;
+
+/**
+ * Rasteriza el SVG de Bezza Pay a un PNG en alta resolución (4x) para insertarlo en jsPDF.
+ */
+function getBezzaLogoPngDataUrl() {
+  if (cachedPdfLogoDataUrl) return Promise.resolve(cachedPdfLogoDataUrl);
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = 480;
+        canvas.height = 232;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        cachedPdfLogoDataUrl = canvas.toDataURL("image/png");
+        resolve(cachedPdfLogoDataUrl);
+      } catch (e) {
+        resolve(null);
+      }
+    };
+    img.onerror = () => resolve(null);
+    img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(BEZZA_PDF_LOGO_SVG);
+  });
+}
+
+/**
+ * Genera una imagen PNG con el degradado oficial de Bezza Pay (#c514a7 -> #f20027)
+ * para la barra superior de cada página del PDF.
+ */
+function getBezzaGradientPngDataUrl() {
+  if (cachedPdfGradientDataUrl) return cachedPdfGradientDataUrl;
+  const canvas = document.createElement("canvas");
+  canvas.width = 600;
+  canvas.height = 24;
+  const ctx = canvas.getContext("2d");
+  const grad = ctx.createLinearGradient(0, 0, canvas.width, 0);
+  grad.addColorStop(0, "#c514a7");
+  grad.addColorStop(1, "#f20027");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  cachedPdfGradientDataUrl = canvas.toDataURL("image/png");
+  return cachedPdfGradientDataUrl;
+}
+
+/**
+ * Formatea un CUIL/CUIT numérico de 11 dígitos como XX-XXXXXXXX-X.
+ */
+function formatCuitForPdf(cuitRaw) {
+  if (!cuitRaw) return "";
+  const digits = String(cuitRaw).replace(/\D/g, "");
+  if (digits.length === 11) {
+    return `${digits.slice(0, 2)}-${digits.slice(2, 10)}-${digits.slice(10)}`;
+  }
+  return String(cuitRaw).trim();
+}
+
+/**
+ * Extrae el rango de fechas (Período) del reporte a partir de la columna "Fecha".
+ */
+function extractReportDateRange(worksheet) {
+  if (!worksheet || !worksheet["!ref"]) return "";
+  const range = XLSX.utils.decode_range(worksheet["!ref"]);
+  const headerRow = range.s.r;
+
+  let fechaCol = -1;
+  for (let c = range.s.c; c <= range.e.c; c++) {
+    const cell = worksheet[XLSX.utils.encode_cell({ r: headerRow, c })];
+    if (cell && cell.v !== undefined) {
+      const name = normalizeString(cell.v);
+      if (name === "fecha") {
+        fechaCol = c;
+        break;
+      }
+    }
+  }
+  if (fechaCol === -1) {
+    for (let c = range.s.c; c <= range.e.c; c++) {
+      const cell = worksheet[XLSX.utils.encode_cell({ r: headerRow, c })];
+      if (cell && cell.v !== undefined) {
+        const name = normalizeString(cell.v);
+        if (name.includes("fecha")) {
+          fechaCol = c;
+          break;
+        }
+      }
+    }
+  }
+  if (fechaCol === -1) return "";
+
+  let minDate = null;
+  let maxDate = null;
+
+  for (let r = headerRow + 1; r <= range.e.r; r++) {
+    // Ignorar fila TOTAL
+    const firstCell = worksheet[XLSX.utils.encode_cell({ r, c: range.s.c })];
+    if (firstCell && String(firstCell.v).trim().toUpperCase() === "TOTAL") continue;
+
+    const cell = worksheet[XLSX.utils.encode_cell({ r, c: fechaCol })];
+    if (!cell || cell.v === undefined || cell.v === null) continue;
+    const d = parseAccreditationDate(cell.v);
+    if (d && !isNaN(d.getTime())) {
+      if (!minDate || d.getTime() < minDate.getTime()) minDate = d;
+      if (!maxDate || d.getTime() > maxDate.getTime()) maxDate = d;
+    }
+  }
+
+  if (!minDate || !maxDate) return "";
+
+  const fmtDate = (d) => {
+    const dd = String(d.getDate()).padStart(2, "0");
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const yyyy = d.getFullYear();
+    return `${dd}/${mm}/${yyyy}`;
+  };
+
+  const sMin = fmtDate(minDate);
+  const sMax = fmtDate(maxDate);
+  return sMin === sMax ? `Fecha: ${sMin}` : `Período: ${sMin} al ${sMax}`;
+}
+
+/**
+ * Intenta extraer el nombre del titular o razón social si existe una columna correspondiente en la hoja.
+ */
+function extractTitularFromSheet(worksheet) {
+  if (!worksheet || !worksheet["!ref"]) return null;
+  const range = XLSX.utils.decode_range(worksheet["!ref"]);
+  const headerRow = range.s.r;
+
+  const candidateNames = ["razon social", "titular", "nombre titular", "comercio nombre", "nombre comercio"];
+  let colIdx = -1;
+  for (let c = range.s.c; c <= range.e.c; c++) {
+    const cell = worksheet[XLSX.utils.encode_cell({ r: headerRow, c })];
+    if (!cell || cell.v === undefined) continue;
+    const norm = normalizeString(cell.v);
+    if (candidateNames.includes(norm)) {
+      colIdx = c;
+      break;
+    }
+  }
+  if (colIdx === -1) return null;
+
+  for (let r = headerRow + 1; r <= range.e.r; r++) {
+    const firstCell = worksheet[XLSX.utils.encode_cell({ r, c: range.s.c })];
+    if (firstCell && String(firstCell.v).trim().toUpperCase() === "TOTAL") continue;
+    const cell = worksheet[XLSX.utils.encode_cell({ r, c: colIdx })];
+    if (cell && cell.v !== undefined && String(cell.v).trim() !== "") {
+      return String(cell.v).trim();
+    }
+  }
+  return null;
+}
+
+/**
+ * Formatea un número como moneda ARS ($ 1.234,56) para mostrar en la tabla PDF.
+ */
+function formatPdfCurrency(num) {
+  if (num === undefined || num === null || isNaN(num)) return "";
+  const absFormatted = new Intl.NumberFormat("es-AR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Math.abs(num));
+  return num < 0 ? `-$ ${absFormatted}` : `$ ${absFormatted}`;
+}
+
+/**
+ * Diccionario de abreviaturas de cabeceras para optimizar el espacio horizontal en el PDF.
+ */
+const PDF_HEADER_ABBREVIATIONS = {
+  "documento tarjeta habiente": "Doc. Tarjeta",
+  "documento tarjetahabiente":  "Doc. Tarjeta",
+  "plazo de acreditacion":      "Acreditación",
+  "fecha liberacion":           "Fecha Lib.",
+  "fecha de liberacion":        "Fecha Lib.",
+  "num. autorizacion":          "Autorización",
+  "num autorizacion":           "Autorización",
+  "numero autorizacion":        "Autorización",
+  "id movimiento":              "ID Mov.",
+  "id venta / id coelsa":       "ID Venta / COELSA",
+  "comision sin iva":           "Comisión s/IVA",
+  "iva de la comision":         "IVA Comisión",
+  "retencion iibb penalidad":   "Ret. IIBB Pen.",
+  "retencion ganancias":        "Ret. Ganancias",
+  "retencion ganancia":         "Ret. Ganancias",
+  "retencion iibb":             "Ret. IIBB",
+  "numero tarjeta":             "N° Tarjeta",
+  "marca tarjeta":              "Marca",
+  "modo entrada":               "Entrada",
+  "forma pago":                 "Forma Pago",
+  "tipo venta":                 "Tipo Venta",
+  "usuario app":                "Usuario App",
+};
+
+/**
+ * Columnas que se omiten en la tabla del PDF porque su valor ya se informa en el encabezado superior.
+ */
+const PDF_COLUMNS_TO_HIDE = [
+  "cuit",
+  "cuil",
+  "cuil/cuit",
+  "cuil cuit",
+  "razon social",
+  "titular",
+  "nombre titular",
+  "comercio nombre",
+  "nombre comercio",
+  "cordobesa",
+  "es cordobesa",
+  "tarjeta cordobesa",
+  "estado",
+];
+
+/**
+ * Formatea una celda de la hoja procesada para su visualización en la tabla PDF.
+ * Limpia guiones bajos ("2_DIAS" -> "2 DIAS") para evitar quiebres forzados.
+ */
+function formatWorksheetCellForPdf(cell, colMeta, compactDates = false) {
+  if (!cell || cell.v === undefined || cell.v === null) return "";
+  const rawStr = String(cell.v).trim();
+  if (rawStr === "") return "";
+
+  // 1. Columnas monetarias
+  if (colMeta.isMoneyCol || cell.z === "$#,##0.00") {
+    if (typeof cell.v === "number" && !isNaN(cell.v)) {
+      return formatPdfCurrency(cell.v);
+    }
+    const cleaned = rawStr.replace(/[$\s]/g, "").replace(",", ".");
+    const parsed = parseFloat(cleaned);
+    if (!isNaN(parsed)) {
+      return formatPdfCurrency(parsed);
+    }
+    return rawStr;
+  }
+
+  // 2. Columnas de fecha
+  if (colMeta.isDateCol || cell.z === "dd/mm/yyyy hh:mm:ss") {
+    const d = parseAccreditationDate(cell.v);
+    if (d && !isNaN(d.getTime())) {
+      const dd = String(d.getDate()).padStart(2, "0");
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      const yyyy = d.getFullYear();
+      const hh = String(d.getHours()).padStart(2, "0");
+      const mi = String(d.getMinutes()).padStart(2, "0");
+      const ss = String(d.getSeconds()).padStart(2, "0");
+      if (hh === "00" && mi === "00" && ss === "00" && !rawStr.includes(":")) {
+        return `${dd}/${mm}/${yyyy}`;
+      }
+      return compactDates ? `${dd}/${mm}/${yyyy} ${hh}:${mi}` : `${dd}/${mm}/${yyyy} ${hh}:${mi}:${ss}`;
+    }
+    return rawStr.replace(/_/g, " ");
+  }
+
+  // 3. Columnas enteras (DNI, Cuotas, etc.)
+  if (colMeta.isIntegerCol || cell.z === "0") {
+    if (typeof cell.v === "number" && !isNaN(cell.v)) {
+      return String(Math.round(cell.v));
+    }
+  }
+
+  // 4. Columnas de CUIL/CUIT
+  if (colMeta.isCuitCol) {
+    return formatCuitForPdf(rawStr);
+  }
+
+  // 5. Texto general: limpiar guiones bajos ("2_DIAS" -> "2 DIAS") y espacios múltiples
+  return String(cell.w !== undefined ? cell.w : cell.v)
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Dibuja el encabezado compacto y el pie de página corporativo de Bezza Pay en una página del PDF.
+ */
+function drawBezzaPdfHeaderAndFooter(doc, pageNumber, totalPages, meta, logoDataUrl, gradDataUrl, emissionDateStr) {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const marginX = 8;
+
+  // 1. Barra superior con degradado Bezza Pay (#c514a7 -> #f20027)
+  if (gradDataUrl) {
+    doc.addImage(gradDataUrl, "PNG", 0, 0, pageWidth, 3.2);
+  } else {
+    doc.setFillColor(208, 0, 112);
+    doc.rect(0, 0, pageWidth, 3.2, "F");
+  }
+
+  // 2. Logo Bezza Pay a la izquierda
+  const logoX = marginX;
+  const logoY = 5.8;
+  const logoW = 24;
+  const logoH = 11.58;
+
+  if (logoDataUrl) {
+    doc.addImage(logoDataUrl, "PNG", logoX, logoY, logoW, logoH);
+  } else {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.setTextColor(208, 0, 112);
+    doc.text("bezza pay", logoX, logoY + 8);
+  }
+
+  // Línea divisoria vertical junto al logo
+  doc.setDrawColor(226, 226, 234);
+  doc.setLineWidth(0.3);
+  doc.line(logoX + logoW + 3.5, 6.2, logoX + logoW + 3.5, 17.5);
+
+  // 3. Título del reporte a la izquierda (centrado verticalmente junto al logo)
+  const titleX = logoX + logoW + 7;
+  const reportTitle = meta && meta.isTransacciones
+    ? "REPORTE DE TRANSACCIONES"
+    : "REPORTE DE MOVIMIENTOS";
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13);
+  doc.setTextColor(17, 17, 17);
+  doc.text(reportTitle, titleX, 13.5);
+
+  // 4. Bloque compacto de metadatos a la derecha (CUIT/Titular + Período)
+  const rightX = pageWidth - marginX;
+  let rightLine1 = "";
+  if (meta && meta.cuilValue) {
+    const cuitFormatted = formatCuitForPdf(meta.cuilValue);
+    if (meta.razonSocial) {
+      rightLine1 = `${meta.razonSocial.toUpperCase()}   |   CUIT/CUIL: ${cuitFormatted}`;
+    } else {
+      rightLine1 = `CUIT / CUIL: ${cuitFormatted}`;
+    }
+  } else if (meta && meta.razonSocial) {
+    rightLine1 = `TITULAR: ${meta.razonSocial.toUpperCase()}`;
+  }
+
+  if (rightLine1) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8.8);
+    doc.setTextColor(17, 17, 17);
+    doc.text(rightLine1, rightX, (meta && meta.periodText) ? 10.8 : 13.5, { align: "right" });
+  }
+
+  if (meta && meta.periodText) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(100, 100, 115);
+    doc.text(meta.periodText, rightX, 15.6, { align: "right" });
+  }
+
+  // Línea separadora inferior del encabezado
+  doc.setDrawColor(230, 228, 238);
+  doc.setLineWidth(0.35);
+  doc.line(marginX, 19.8, pageWidth - marginX, 19.8);
+
+  // 5. Pie de página con numeración ("Página X de Y")
+  const footerLineY = pageHeight - 10.2;
+  const footerTextY = pageHeight - 5.5;
+
+  doc.setDrawColor(230, 228, 238);
+  doc.setLineWidth(0.25);
+  doc.line(marginX, footerLineY, pageWidth - marginX, footerLineY);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.setTextColor(50, 50, 65);
+  doc.text(`Página ${pageNumber} de ${totalPages}`, rightX, footerTextY, { align: "right" });
+}
+
+/**
+ * Genera y descarga el reporte procesado en formato PDF (Hoja ancha adaptable A4 / A3 / Widescreen)
+ * manteniendo la estética y paleta de colores de Bezza Pay y evitando cortes a mitad de palabra.
+ */
+async function downloadPdfFile() {
+  if (!processedWorkbook) return;
+
+  const originalBtnHtml = downloadPdfBtn ? downloadPdfBtn.innerHTML : "";
+  if (downloadPdfBtn) {
+    downloadPdfBtn.disabled = true;
+    downloadPdfBtn.innerHTML = `<span>Generando PDF...</span>`;
+  }
+
+  try {
+    const jspdfNs = window.jspdf;
+    if (!jspdfNs || !jspdfNs.jsPDF) {
+      throw new Error("La librería jsPDF no se cargó correctamente. Verificá tu conexión o recargá la página.");
+    }
+
+    const { jsPDF } = jspdfNs;
+
+    // Instancia auxiliar de medición para calcular el ancho exacto requerido por las columnas
+    const measureDoc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+    if (typeof measureDoc.autoTable !== "function") {
+      throw new Error("El complemento jsPDF-AutoTable no está disponible.");
+    }
+
+    const [logoDataUrl, gradDataUrl] = await Promise.all([
+      getBezzaLogoPngDataUrl(),
+      Promise.resolve(getBezzaGradientPngDataUrl()),
+    ]);
+
+    const now = new Date();
+    const emissionDateStr = `${String(now.getDate()).padStart(2, "0")}/${String(now.getMonth() + 1).padStart(2, "0")}/${now.getFullYear()} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")} hs`;
+
+    const sheetNames = processedWorkbook.SheetNames;
+    const preparedSheets = [];
+    let maxRequiredPageWidth = 297; // Mínimo A4 Horizontal (297 mm)
+
+    for (let sIdx = 0; sIdx < sheetNames.length; sIdx++) {
+      const ws = processedWorkbook.Sheets[sheetNames[sIdx]];
+      if (!ws || !ws["!ref"]) continue;
+
+      const range = XLSX.utils.decode_range(ws["!ref"]);
+      const headerRow = range.s.r;
+      const rawColCount = range.e.c - range.s.c + 1;
+      const compactDates = rawColCount > 10;
+
+      // 1. Filtrar columnas (ocultando CUIT y Razón Social que ya figuran en el encabezado) y clasificar las visibles
+      const visibleCols = [];
+      const headers = [];
+      const colMeta = [];
+
+      for (let c = range.s.c; c <= range.e.c; c++) {
+        const addr = XLSX.utils.encode_cell({ r: headerRow, c });
+        const cell = ws[addr];
+        const rawHeaderText = cell && cell.v !== undefined ? String(cell.v).replace(/_/g, " ").replace(/\s+/g, " ").trim() : "";
+        const norm = normalizeString(rawHeaderText);
+
+        // Si es la primera columna (donde va la etiqueta "TOTAL" al pie), nunca ocultarla;
+        // si no es la primera columna y está en PDF_COLUMNS_TO_HIDE (CUIT, Razón Social, etc.), omitirla de la tabla PDF
+        if (c > range.s.c && PDF_COLUMNS_TO_HIDE.includes(norm)) {
+          continue;
+        }
+
+        const displayHeader = PDF_HEADER_ABBREVIATIONS[norm] || rawHeaderText;
+
+        const isNetoCol = norm === "monto neto" || (norm.includes("neto") && !norm.includes("bruto"));
+        const isMoneyCol = (
+          norm.includes("monto") ||
+          norm.includes("neto") ||
+          norm.includes("bruto") ||
+          norm.includes("comision") ||
+          norm.includes("iva") ||
+          norm.includes("cft") ||
+          norm.includes("arancel") ||
+          norm.includes("costo") ||
+          norm.includes("retencion") ||
+          norm === "saldo"
+        ) && !norm.includes("condicion") && !norm.includes("descripcion");
+
+        const isDateCol = norm.includes("fecha");
+        const isCuitCol = norm.includes("cuit") || norm.includes("cuil");
+        const isIntegerCol = (
+          norm.includes("documento") ||
+          norm.includes("tarjeta habiente") ||
+          norm.includes("tarjetahabiente") ||
+          norm.includes("dni") ||
+          norm.includes("cuota")
+        );
+        const isSingleLineCol = (
+          isMoneyCol ||
+          isDateCol ||
+          isCuitCol ||
+          isIntegerCol ||
+          norm === "id" ||
+          norm === "id movimiento" ||
+          norm.includes("numero tarjeta") ||
+          norm.includes("autorizacion") ||
+          norm === "lector" ||
+          norm === "modo entrada" ||
+          norm === "estado" ||
+          norm === "tipo" ||
+          norm === "plazo de acreditacion"
+        );
+        const isCenterCol = (
+          isDateCol ||
+          isCuitCol ||
+          isIntegerCol ||
+          norm === "id" ||
+          norm === "id movimiento" ||
+          norm.includes("numero tarjeta") ||
+          norm.includes("autorizacion") ||
+          norm === "lector" ||
+          norm.includes("plazo") ||
+          norm.includes("marca") ||
+          norm === "modo entrada" ||
+          norm === "tipo" ||
+          norm === "tipo venta" ||
+          norm === "estado"
+        );
+
+        visibleCols.push(c);
+        headers.push(displayHeader);
+        colMeta.push({
+          norm,
+          isNetoCol,
+          isMoneyCol,
+          isDateCol,
+          isCuitCol,
+          isIntegerCol,
+          isSingleLineCol,
+          isCenterCol,
+        });
+      }
+
+      const colCount = visibleCols.length;
+      if (colCount === 0) continue;
+
+      // 2. Extraer filas de datos y fila TOTAL sólo para las columnas visibles
+      const bodyRows = [];
+      for (let r = headerRow + 1; r <= range.e.r; r++) {
+        const rowValues = [];
+        let hasContent = false;
+
+        // Verificar si la fila original es la fila TOTAL (etiqueta en range.s.c)
+        const firstOrigCell = ws[XLSX.utils.encode_cell({ r, c: range.s.c })];
+        const isOrigTotalRow = firstOrigCell && String(firstOrigCell.v).trim().toUpperCase() === "TOTAL";
+
+        for (let idx = 0; idx < colCount; idx++) {
+          const c = visibleCols[idx];
+          const cell = ws[XLSX.utils.encode_cell({ r, c })];
+          let formatted = formatWorksheetCellForPdf(cell, colMeta[idx], compactDates);
+          if (isOrigTotalRow && idx === 0) {
+            formatted = "TOTAL";
+          }
+          if (formatted !== "") hasContent = true;
+          rowValues.push(formatted);
+        }
+        if (hasContent) {
+          bodyRows.push(rowValues);
+        }
+      }
+
+      const isLastRowTotal = bodyRows.length > 0 && String(bodyRows[bodyRows.length - 1][0]).trim().toUpperCase() === "TOTAL";
+
+      // 3. Definir tipografía cómoda y legible (ya que la hoja se adapta en ancho cuando hay muchas columnas)
+      let fontSize = 8.2;
+      let headFontSize = 8.5;
+      let cellPadding = 2.0;
+
+      if (colCount > 16) {
+        fontSize = 7.4;
+        headFontSize = 7.8;
+        cellPadding = 1.7;
+      } else if (colCount > 11) {
+        fontSize = 7.8;
+        headFontSize = 8.2;
+        cellPadding = 1.8;
+      }
+
+      // 4. Calcular el ancho mínimo por columna (minCellWidth) para PROHIBIR cortes a mitad de palabra
+      const columnStyles = {};
+      let sheetTotalMinWidth = 0;
+
+      for (let i = 0; i < colCount; i++) {
+        const meta = colMeta[i];
+        const headerStr = headers[i] || "";
+
+        // A) Ancho de la palabra más larga del encabezado (o del encabezado entero si es corto)
+        measureDoc.setFont("helvetica", "bold");
+        measureDoc.setFontSize(headFontSize);
+        const headerWords = headerStr.split(/\s+/).filter(Boolean);
+        let maxHeaderTokenW = 0;
+        for (const hw of headerWords) {
+          const w = measureDoc.getTextWidth(hw);
+          if (w > maxHeaderTokenW) maxHeaderTokenW = w;
+        }
+        const fullHeaderW = measureDoc.getTextWidth(headerStr);
+        // Si el encabezado tiene 1 o 2 palabras cortas, intentar que entre en 1 línea; si tiene más, al menos la palabra más larga
+        const targetHeaderW = headerStr.length <= 14 ? fullHeaderW : Math.max(maxHeaderTokenW, fullHeaderW * 0.58);
+
+        // B) Ancho requerido por el contenido de las celdas de esa columna
+        measureDoc.setFont("helvetica", meta.isNetoCol ? "bold" : "normal");
+        measureDoc.setFontSize(fontSize);
+
+        let maxFullCellW = 0;
+        let maxWordCellW = 0;
+
+        for (let rIdx = 0; rIdx < bodyRows.length; rIdx++) {
+          const valStr = bodyRows[rIdx][i];
+          if (!valStr) continue;
+
+          // En la fila TOTAL el texto es bold
+          if (isLastRowTotal && rIdx === bodyRows.length - 1) {
+            measureDoc.setFont("helvetica", "bold");
+          } else {
+            measureDoc.setFont("helvetica", meta.isNetoCol ? "bold" : "normal");
+          }
+
+          const fullW = measureDoc.getTextWidth(valStr);
+          if (fullW > maxFullCellW) maxFullCellW = fullW;
+
+          const words = valStr.split(/\s+/).filter(Boolean);
+          for (const word of words) {
+            const ww = measureDoc.getTextWidth(word);
+            if (ww > maxWordCellW) maxWordCellW = ww;
+          }
+        }
+
+        // Si es columna de una sola línea (importes, fechas, IDs, tarjetas, códigos), exigir el ancho total de la celda;
+        // si es columna de texto multi-palabra (Forma Pago, Usuario App, Marca), exigir al menos la palabra más larga
+        // (y al menos el 75% de la frase completa para que a lo sumo ocupe 2 líneas limpias sin cortar sílabas).
+        const contentMinW = meta.isSingleLineCol
+          ? maxFullCellW
+          : Math.max(maxWordCellW, Math.min(maxFullCellW, Math.max(maxWordCellW * 1.35, maxFullCellW * 0.72)));
+
+        const requiredColW = Math.max(targetHeaderW, contentMinW) + (cellPadding * 2) + 2.2;
+        sheetTotalMinWidth += requiredColW;
+
+        columnStyles[i] = {
+          halign: meta.isMoneyCol ? "right" : (meta.isCenterCol ? "center" : "left"),
+          minCellWidth: Math.round(requiredColW * 10) / 10,
+        };
+      }
+
+      // Margen izquierdo (8mm) + margen derecho (8mm) + holgura extra para distribución fluida
+      const requiredPageW = Math.ceil(sheetTotalMinWidth + 16 + colCount * 1.2);
+      if (requiredPageW > maxRequiredPageWidth) {
+        maxRequiredPageWidth = requiredPageW;
+      }
+
+      preparedSheets.push({
+        headers,
+        bodyRows,
+        colMeta,
+        columnStyles,
+        isLastRowTotal,
+        fontSize,
+        headFontSize,
+        cellPadding,
+      });
+    }
+
+    // 5. Determinar dimensiones de página (A4 Horizontal 297x210 o Hoja Ancha Adaptable Widescreen/A3 cuando hay muchas columnas)
+    const finalPageWidth = Math.max(297, maxRequiredPageWidth);
+    const finalPageHeight = finalPageWidth > 297
+      ? Math.min(297, Math.max(210, Math.round(finalPageWidth * 0.56)))
+      : 210;
+
+    const doc = new jsPDF({
+      orientation: "landscape",
+      unit: "mm",
+      format: [finalPageWidth, finalPageHeight],
+      compress: true,
+    });
+
+    for (let idx = 0; idx < preparedSheets.length; idx++) {
+      const sheetData = preparedSheets[idx];
+      if (idx > 0) {
+        doc.addPage([finalPageWidth, finalPageHeight], "landscape");
+      }
+
+      doc.autoTable({
+        startY: 22.2,
+        margin: { top: 22.2, right: 8, bottom: 12.5, left: 8 },
+        tableWidth: "auto",
+        head: [sheetData.headers],
+        body: sheetData.bodyRows,
+        theme: "grid",
+        styles: {
+          font: "helvetica",
+          fontSize: sheetData.fontSize,
+          cellPadding: sheetData.cellPadding,
+          textColor: [17, 17, 17],
+          lineColor: [230, 228, 236],
+          lineWidth: 0.12,
+          valign: "middle",
+          overflow: "linebreak",
+        },
+        headStyles: {
+          fillColor: [208, 0, 112], // #D00070 Magenta oficial Bezza Pay
+          textColor: [255, 255, 255],
+          fontStyle: "bold",
+          fontSize: sheetData.headFontSize,
+          halign: "center",
+          valign: "middle",
+          lineColor: [185, 0, 98],
+          lineWidth: 0.15,
+        },
+        alternateRowStyles: {
+          fillColor: [242, 242, 242], // #F2F2F2 Filas intercaladas
+        },
+        columnStyles: sheetData.columnStyles,
+        didParseCell: function (data) {
+          if (data.section === "body") {
+            const isTotalRow = sheetData.isLastRowTotal && data.row.index === sheetData.bodyRows.length - 1;
+            if (isTotalRow) {
+              // Fila final TOTAL con estilo idéntico al encabezado (#D00070, letras blancas y negrita)
+              data.cell.styles.fillColor = [208, 0, 112];
+              data.cell.styles.textColor = [255, 255, 255];
+              data.cell.styles.fontStyle = "bold";
+              data.cell.styles.lineColor = [185, 0, 98];
+              if (data.column.index === 0) {
+                data.cell.styles.halign = "center";
+              }
+            } else {
+              // Destacar columna Monto Neto en rosa suave (#E8CAD0)
+              const cMeta = sheetData.colMeta[data.column.index];
+              if (cMeta && cMeta.isNetoCol) {
+                data.cell.styles.fillColor = [232, 202, 208];
+                data.cell.styles.fontStyle = "bold";
+              }
+            }
+          }
+        },
+      });
+    }
+
+    // Estampar encabezado compacto y pie de página con numeración exacta ("Página X de Y") en todas las hojas
+    const totalPages = doc.internal.getNumberOfPages();
+    for (let p = 1; p <= totalPages; p++) {
+      doc.setPage(p);
+      drawBezzaPdfHeaderAndFooter(
+        doc,
+        p,
+        totalPages,
+        processedReportMeta,
+        logoDataUrl,
+        gradDataUrl,
+        emissionDateStr
+      );
+    }
+
+    doc.save(downloadPdfFileName);
+  } catch (err) {
+    console.error("[ReportePro] Error al generar el PDF:", err);
+    alert("No se pudo generar el archivo PDF.\nError: " + err.message);
+  } finally {
+    if (downloadPdfBtn) {
+      downloadPdfBtn.disabled = false;
+      downloadPdfBtn.innerHTML = originalBtnHtml;
+    }
   }
 }
 
@@ -2402,6 +3198,7 @@ if (btnIibbModeManual) btnIibbModeManual.addEventListener("click", () => setIibb
 
 /* --- Botones de Descarga y Reinicio --- */
 downloadBtn.addEventListener("click", downloadFile);
+if (downloadPdfBtn) downloadPdfBtn.addEventListener("click", downloadPdfFile);
 resetBtn.addEventListener("click", reset);
 errorResetBtn.addEventListener("click", reset);
 

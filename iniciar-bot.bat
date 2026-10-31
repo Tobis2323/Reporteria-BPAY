@@ -9,7 +9,7 @@ echo   (Deja esta ventana abierta mientras trabajes)
 echo =====================================================
 echo.
 
-node start-host.js
+node server/start-host.js
 
 echo.
 echo =====================================================

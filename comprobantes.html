@@ -8,9 +8,9 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="style.css?v=2" />
-    <link rel="stylesheet" href="comprobantes.css?v=1" />
-    <link rel="shortcut icon" href="Logo.png?v=2" type="image/png" />
+    <link rel="stylesheet" href="css/style.css?v=2" />
+    <link rel="stylesheet" href="css/comprobantes.css?v=1" />
+    <link rel="shortcut icon" href="assets/Logo.png?v=2" type="image/png" />
   </head>
   <body>
     <!-- ENCABEZADO OFICIAL BEZZA PAY -->
@@ -18,7 +18,7 @@
       <div class="header__inner">
         <div class="header__left">
           <a href="index.html" class="header__brand" id="headerBrand" title="Bezza Pay - Menú Principal" aria-label="Bezza Pay">
-            <img src="BezzaPaySVG.svg" alt="Bezza Pay" class="header__logo" />
+            <img src="assets/BezzaPaySVG.svg" alt="Bezza Pay" class="header__logo" />
           </a>
           <nav class="header__nav" aria-label="Navegación principal">
             <a href="index.html" class="header__nav-link" id="navReporteria">
@@ -39,6 +39,14 @@
                 <line x1="6" y1="17" x2="10" y2="17"></line>
               </svg>
               <span class="nav-text">Comprobantes</span>
+            </a>
+            <a href="retenciones.html" class="header__nav-link" id="navRetenciones">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="19" y1="5" x2="5" y2="19"></line>
+                <circle cx="6.5" cy="6.5" r="2.5"></circle>
+                <circle cx="17.5" cy="17.5" r="2.5"></circle>
+              </svg>
+              <span class="nav-text">Retenciones</span>
             </a>
           </nav>
         </div>
@@ -298,6 +306,6 @@ Transf 185.000 de Juan Carlos Rodriguez CUIT 20-33445566-7 CVU 00000031000192837
     <div id="toast" class="comp-toast" role="status" aria-live="polite"></div>
 
     <!-- SCRIPTS -->
-    <script src="comprobantes.js"></script>
+    <script src="js/comprobantes.js"></script>
   </body>
 </html>
