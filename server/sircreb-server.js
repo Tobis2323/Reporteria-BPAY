@@ -232,6 +232,11 @@ async function createReadyPage() {
     // en una sola espera (antes se probaban uno por uno con 5s cada uno)
     try {
       await page.waitForSelector(CUIT_SELECTOR_ANY, { timeout: FORM_READY_TIMEOUT_MS });
+      // Esperar a que Google reCAPTCHA v3 esté inicializado para que el primer submit no falle en silencio
+      await page.waitForFunction(
+        () => typeof window.grecaptcha !== 'undefined' && typeof window.grecaptcha.ready === 'function',
+        { timeout: 10000 }
+      ).catch(() => {});
     } catch (e) {
       // Volcar el HTML del body para diagnóstico
       const bodySnippet = await page
@@ -368,35 +373,56 @@ export async function queryComarbPadron(sistema = 'sirtac', cuit, periodos = [])
     await cuitInput.click({ clickCount: 3 });
     await cuitInput.type(cuitFormatted, { delay: 10 });
 
+    const cuitDigits = cuitFormatted.replace(/\D/g, '');
+
     /**
-     * Cierra el modal previo si quedó abierto, selecciona el período, hace clic en Consultar
-     * y devuelve el JSON de consulta_padron (o null si no hubo respuesta a tiempo).
+     * Consulta un período directamente invocando grecaptcha.execute + fetch(consulta_padron)
+     * dentro del contexto de la página de COMARB (sin depender del re-render de los <select> de React),
+     * con respaldo automático al envío del formulario DOM si fuera necesario.
      */
     const submitPeriod = async (p) => {
-      // 1. Cerrar modal anterior si quedó abierto
-      const closeBtn = await page.$('.btn-close, button.close, .modal-header button, .modal button');
-      if (closeBtn) {
-        try { await closeBtn.click(); } catch (e) {}
-        await new Promise((r) => setTimeout(r, 200));
+      try {
+        const directJson = await page.evaluate(
+          async ({ sistema, cuitDigits, anio, mes }) => {
+            if (typeof window.grecaptcha === 'undefined' || typeof window.grecaptcha.execute !== 'function') {
+              return null;
+            }
+            const scriptEl = document.querySelector('script[src*="recaptcha/api.js?render="]');
+            const siteKey = scriptEl
+              ? new URL(scriptEl.src).searchParams.get('render')
+              : '6LcvSX0sAAAAAMExDE6v9IUq2LLb9qnetP4lxeQ0';
+            await new Promise((r) => window.grecaptcha.ready(r));
+            const token = await window.grecaptcha.execute(siteKey, { action: 'consulta_padron' });
+            const url = `https://sircreb.comarb.gob.ar/sircreb/contribuyente/api/consulta_padron?sistema=${encodeURIComponent(sistema)}&cuit=${encodeURIComponent(cuitDigits)}&anio=${encodeURIComponent(anio)}&mes=${encodeURIComponent(mes)}&recaptcha_token=${encodeURIComponent(token)}`;
+            const res = await fetch(url, { headers: { 'Content-Type': 'application/json' } });
+            const buf = await res.arrayBuffer();
+            const text = new TextDecoder('iso-8859-1').decode(buf);
+            return JSON.parse(text);
+          },
+          { sistema: sisNorm, cuitDigits, anio: p.anio, mes: p.mes }
+        );
+        if (directJson) return directJson;
+      } catch (directErr) {
+        console.warn('[SIRCREB Bot] Consulta directa falló, usando formulario DOM de respaldo:', directErr.message);
       }
 
-      // 2. Seleccionar año y mes (la página actualizada usa id="anio" e id="mes")
+      // Respaldo por interacción DOM
+      await page.evaluate(() => {
+        const closeBtn = document.querySelector('.modal.show .btn-close, .btn-close, button.close, .modal-header button');
+        if (closeBtn) closeBtn.click();
+      });
+      await new Promise((r) => setTimeout(r, 250));
+
       await page.select('#anio', String(p.anio));
       await page.select('#mes', String(p.mes));
-
-      await page.evaluate(() => {
-        document.querySelector('#mes')?.dispatchEvent(new Event('change', { bubbles: true }));
-        document.querySelector('#anio')?.dispatchEvent(new Event('change', { bubbles: true }));
-      });
-
       await new Promise((r) => setTimeout(r, 150));
 
-      // 3. Registrar la espera ANTES del clic para no perder la respuesta.
-      // Resuelve apenas llega la respuesta (sin polling) y cubre reCAPTCHA + API.
+      const expectedParams = `anio=${p.anio}&mes=${p.mes}`;
       const apiResponsePromise = page
-        .waitForResponse((response) => response.url().includes('consulta_padron'), {
-          timeout: API_RESPONSE_TIMEOUT_MS,
-        })
+        .waitForResponse(
+          (response) => response.url().includes('consulta_padron') && response.url().includes(expectedParams),
+          { timeout: API_RESPONSE_TIMEOUT_MS }
+        )
         .then(async (response) => {
           const buffer = await response.buffer();
           const text = new TextDecoder('iso-8859-1').decode(buffer);
@@ -409,14 +435,25 @@ export async function queryComarbPadron(sistema = 'sirtac', cuit, periodos = [])
           return null;
         });
 
-      // 4. Clic en Consultar (el botón tiene classes "boton btn btn-primary", confirmado en DOM live)
-      const submitBtn = await page.$(SUBMIT_SELECTOR);
-      if (!submitBtn) {
+      const clicked = await page.evaluate((sel) => {
+        const btn = document.querySelector(sel);
+        if (!btn) return false;
+        btn.click();
+        return true;
+      }, SUBMIT_SELECTOR);
+      if (!clicked) {
         throw new Error('No se encontró el botón Consultar');
       }
-      await submitBtn.click();
 
-      return apiResponsePromise;
+      const result = await apiResponsePromise;
+
+      await new Promise((r) => setTimeout(r, 300));
+      await page.evaluate(() => {
+        const closeBtn = document.querySelector('.modal.show .btn-close, .btn-close, button.close, .modal-header button');
+        if (closeBtn) closeBtn.click();
+      });
+
+      return result;
     };
 
     // 3. Iterar por cada período pendiente en la misma sesión
